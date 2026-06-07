@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #0f1419;
+  overflow: hidden;
+}
+
+/* Slim range sliders to fit the gaming aesthetic */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: #2c3a47;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #ff4655;
+  cursor: pointer;
+  border: 2px solid #0f1419;
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #ff4655;
+  cursor: pointer;
+  border: 2px solid #0f1419;
+}
+
+/* --- Hit / miss feedback animations --- */
+@keyframes hitmarker {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes floatup {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-44px);
+    opacity: 0;
+  }
+}
+.animate-hitmarker {
+  animation: hitmarker 0.25s ease-out forwards;
+}
+.animate-floatup {
+  animation: floatup 0.65s ease-out forwards;
+}
