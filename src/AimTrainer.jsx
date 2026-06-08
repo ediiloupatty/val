@@ -64,7 +64,7 @@ const VALORANT_YAW_CONSTANT = 0.07;
 // look (which makes panning sideways feel swimmy/heavy).
 const VALORANT_HFOV = 103;
 
-export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setBest }) {
+export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setBest, onSession }) {
   const mountRef = useRef(null);
   const rootRef = useRef(null);
   // All mutable engine/game data — lives outside React's render cycle so the
@@ -670,6 +670,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       // Best split = fastest (lowest) average; ignore sessions with <2 hits.
       split: avgRt > 0 ? (prev.split ? Math.min(prev.split, avgRt) : avgRt) : prev.split,
     }));
+    // Log this session to the weekly leaderboard (skip empty/idle sessions).
+    if (score > 0) onSession?.({ score, accuracy, split: avgRt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, hasPlayed]);
 

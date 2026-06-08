@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Landing from './Landing.jsx';
 import AimTrainer from './AimTrainer.jsx';
-import { getDeviceId, fetchProfile, saveProfile } from './api.js';
+import { getDeviceId, fetchProfile, saveProfile, submitScore } from './api.js';
 
 export default function App() {
   const [view, setView] = useState('landing'); // 'landing' | 'play'
@@ -76,6 +76,12 @@ export default function App() {
     });
   };
 
+  // Log a finished session to the weekly leaderboard (best score also synced
+  // separately via handleSetBest).
+  const handleSession = (session) => {
+    submitScore(deviceId, name, session);
+  };
+
   const handleSetLang = (newLang) => {
     setLang(newLang);
     try {
@@ -108,6 +114,7 @@ export default function App() {
       isMobile={isMobile}
       best={best}
       setBest={handleSetBest}
+      onSession={handleSession}
     />
   );
 }

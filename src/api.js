@@ -68,3 +68,43 @@ export async function saveProfile(deviceId, name, best) {
     console.warn('[API] Could not sync profile to Cloudflare D1:', err.message);
   }
 }
+
+/**
+ * Logs one finished session to the scores table (feeds the weekly leaderboard).
+ * Fire-and-forget — failures are non-fatal to gameplay.
+ */
+export async function submitScore(deviceId, name, session) {
+  if (!deviceId || !session) return;
+  try {
+    await fetch(`${API_URL}/api/score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId,
+        name,
+        score: session.score,
+        accuracy: session.accuracy,
+        split: session.split,
+      }),
+    });
+  } catch (err) {
+    console.warn('[API] Could not submit score:', err.message);
+  }
+}
+
+/**
+ * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
+ * Returns an array (possibly empty) or null on failure.
+ */
+export async function fetchLeaderboard() {
+  try {
+    const res = await fetch(`${API_URL}/api/leaderboard`);
+    if (res.ok) {
+      const json = await res.json();
+      return json.success ? json.data : null;
+    }
+  } catch (err) {
+    console.warn('[API] Could not fetch leaderboard:', err.message);
+  }
+  return null;
+}

@@ -145,6 +145,76 @@ export default {
       }
     }
 
+    // POST /api/score — log one finished session (feeds the weekly leaderboard)
+    if (path === "/api/score" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const { deviceId, name, score, accuracy, split } = body;
+
+        if (!deviceId || !name || score == null) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Missing required fields: deviceId, name, score" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+
+        await env.DB.prepare(
+          "INSERT INTO scores (device_id, name, score, accuracy, split, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(
+          deviceId,
+          String(name).slice(0, 20),
+          Math.round(Number(score)) || 0,
+          Number(accuracy) || 0,
+          Number(split) || 0,
+          new Date().toISOString()
+        ).run();
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Database error saving score: " + err.message }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
+    // GET /api/leaderboard — top 10 scores achieved in the last 7 days.
+    // SQLite "bare column" rule: with a single MAX(), the name/accuracy/split
+    // columns are taken from the same row as that max score (one per device).
+    if (path === "/api/leaderboard" && request.method === "GET") {
+      try {
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { results } = await env.DB.prepare(`
+          SELECT name, MAX(score) AS score, accuracy, split
+          FROM scores
+          WHERE created_at >= ?
+          GROUP BY device_id
+          ORDER BY score DESC
+          LIMIT 10
+        `).bind(weekAgo).all();
+
+        const data = (results || []).map((row) => ({
+          name: row.name,
+          score: Number(row.score) || 0,
+          accuracy: Number(row.accuracy) || 0,
+          split: Number(row.split) || 0,
+        }));
+
+        return new Response(
+          JSON.stringify({ success: true, data }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Database error fetching leaderboard: " + err.message }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   }
 };

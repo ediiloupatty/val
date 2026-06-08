@@ -6,3 +6,17 @@ CREATE TABLE IF NOT EXISTS profiles (
   split REAL DEFAULT 0,
   updated_at TEXT
 );
+
+-- One row per finished session, used for the weekly leaderboard.
+CREATE TABLE IF NOT EXISTS scores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  score INTEGER NOT NULL DEFAULT 0,
+  accuracy REAL DEFAULT 0,
+  split REAL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+-- Speeds up the "last 7 days, top score" leaderboard query.
+CREATE INDEX IF NOT EXISTS idx_scores_created_at ON scores (created_at);

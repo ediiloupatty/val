@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { TEXT } from './translations.js';
+import { fetchLeaderboard } from './api.js';
 
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
@@ -12,14 +13,28 @@ const CONTACT = {
 };
 
 export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best }) {
-  const [panel, setPanel] = useState(null); // 'profile' | 'credits' | 'support' | null
+  const [panel, setPanel] = useState(null); // 'profile' | 'credits' | 'support' | 'leaderboard' | null
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
+  const [board, setBoard] = useState(null); // null = loading, [] = empty, [...] = rows
   const t = TEXT[lang] || TEXT.en;
 
   useEffect(() => {
     setTempName(name);
   }, [name]);
+
+  // Load the weekly leaderboard each time its panel opens (always fresh).
+  useEffect(() => {
+    if (panel !== 'leaderboard') return;
+    let alive = true;
+    setBoard(null);
+    fetchLeaderboard().then((rows) => {
+      if (alive) setBoard(rows || []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [panel]);
 
   const handleSave = () => {
     const trimmed = tempName.trim();
@@ -72,6 +87,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           </span>
         </button>
 
+        <MenuItem label={`🏆 ${t.leaderboard}`} onClick={() => setPanel('leaderboard')} />
         <MenuItem label={t.profile} onClick={() => setPanel('profile')} />
         <MenuItem label={t.credits} onClick={() => setPanel('credits')} />
         <MenuItem label={`👋 ${t.support}`} onClick={() => setPanel('support')} />
@@ -143,6 +159,49 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
             {t.creditsTip}
           </p>
+        </Modal>
+      )}
+
+      {panel === 'leaderboard' && (
+        <Modal title={t.leaderboard} onClose={() => setPanel(null)}>
+          <p className="-mt-2 mb-4 text-[11px] uppercase tracking-widest text-slate-400">
+            {t.leaderboardSub}
+          </p>
+          {board === null ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t.leaderboardLoading}</p>
+          ) : board.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">{t.leaderboardEmpty}</p>
+          ) : (
+            <ol className="space-y-1.5">
+              {board.map((row, i) => {
+                const isYou = row.name === name;
+                const medal = ['🥇', '🥈', '🥉'][i];
+                return (
+                  <li
+                    key={i}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 ${
+                      isYou ? 'bg-val-red/15 ring-1 ring-val-red/40' : 'bg-black/30'
+                    }`}
+                  >
+                    <span className="w-7 shrink-0 text-center text-sm font-black tabular-nums text-slate-400">
+                      {medal || i + 1}
+                    </span>
+                    <span className="flex-1 truncate text-sm font-bold text-white">
+                      {row.name}
+                      {isYou && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase tracking-widest text-val-red">
+                          {t.you}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-sm font-black tabular-nums text-val-accent">
+                      {row.score.toLocaleString()}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </Modal>
       )}
 
