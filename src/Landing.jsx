@@ -4,8 +4,15 @@ import { TEXT } from './translations.js';
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
 
+// Contact / support destinations — edit to your own links.
+const CONTACT = {
+  email: 'muhammadlikmansyah143@gmail.com',
+  donate: 'https://saweria.co/', // ← replace with your Saweria/Trakteer/Ko-fi
+  github: 'https://github.com/ediiloupatty', // ← your profile
+};
+
 export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best }) {
-  const [panel, setPanel] = useState(null); // 'profile' | 'credits' | null
+  const [panel, setPanel] = useState(null); // 'profile' | 'credits' | 'support' | null
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
   const t = TEXT[lang] || TEXT.en;
@@ -67,6 +74,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
         <MenuItem label={t.profile} onClick={() => setPanel('profile')} />
         <MenuItem label={t.credits} onClick={() => setPanel('credits')} />
+        <MenuItem label={`👋 ${t.support}`} onClick={() => setPanel('support')} />
         <MenuItem
           label={lang === 'en' ? '🌐 Language: EN' : '🌐 Bahasa: ID'}
           onClick={() => setLang(lang === 'en' ? 'id' : 'en')}
@@ -135,6 +143,36 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
             {t.creditsTip}
           </p>
+        </Modal>
+      )}
+
+      {panel === 'support' && (
+        <Modal title={t.sayHello} onClose={() => setPanel(null)}>
+          <p className="mb-5 text-sm leading-relaxed text-slate-300">{t.supportMsg}</p>
+          <div className="space-y-2.5">
+            <a
+              href={CONTACT.donate}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg bg-val-red px-3 py-2.5 text-sm font-bold text-white transition hover:brightness-110"
+            >
+              {t.donate}
+            </a>
+            <a
+              href={`mailto:${CONTACT.email}`}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2.5 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              {t.helloBtn}
+            </a>
+            <a
+              href={CONTACT.github}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2.5 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              {t.github}
+            </a>
+          </div>
         </Modal>
       )}
 

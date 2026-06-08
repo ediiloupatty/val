@@ -997,9 +997,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           </div>
         )}
       </main>
-
-      {/* Floating "say hello" / donation bubble (hidden in fullscreen) */}
-      {!isFullscreen && <SupportBubble t={t} />}
     </div>
   );
 }
@@ -1138,85 +1135,6 @@ function SummaryRow({ label, value }) {
         {label}
       </p>
       <p className="font-black tabular-nums text-white">{value}</p>
-    </div>
-  );
-}
-
-/* ---- Floating support / contact bubble (bottom-right) -------------------- *
- * Edit the links below to your own donation / contact destinations.
- * ------------------------------------------------------------------------- */
-const CONTACT = {
-  email: 'muhammadlikmansyah143@gmail.com',
-  donate: 'https://saweria.co/', // ← replace with your Saweria/Trakteer/Ko-fi
-  github: 'https://github.com/', // ← replace with your profile
-};
-
-// Required attribution for the CC-BY Sketchfab models. Paste the exact model
-// page URLs so the credits link back to the sources.
-const CREDITS = [
-  {
-    text: 'Revolver: “1851 Colt Navy Revolver” by Steven Jurriaans (CC BY)',
-    url: 'https://sketchfab.com/',
-  },
-];
-
-function SupportBubble({ t }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
-      {/* Message card */}
-      {open && (
-        <div className="w-64 origin-bottom-right rounded-2xl border border-white/10 bg-val-panel/95 p-4 shadow-2xl backdrop-blur">
-          <p className="text-base font-black text-white">{t.sayHello}</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-300">{t.supportMsg}</p>
-          <div className="mt-3 space-y-2">
-            <a
-              href={CONTACT.donate}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg bg-val-red px-3 py-2 text-xs font-bold text-white transition hover:brightness-110"
-            >
-              {t.donate}
-            </a>
-            <a
-              href={`mailto:${CONTACT.email}`}
-              className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
-            >
-              {t.helloBtn}
-            </a>
-            <a
-              href={CONTACT.github}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
-            >
-              {t.github}
-            </a>
-          </div>
-          <div className="mt-3 space-y-1 border-t border-white/5 pt-2">
-            {CREDITS.map((c) => (
-              <a
-                key={c.text}
-                href={c.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-[10px] leading-snug text-slate-500 hover:text-slate-300"
-              >
-                {c.text}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Toggle button */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        title="Say hello / Support"
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-val-red text-2xl shadow-xl shadow-val-red/30 transition hover:scale-110 active:scale-95"
-      >
-        {open ? '✕' : '👋'}
-      </button>
     </div>
   );
 }
