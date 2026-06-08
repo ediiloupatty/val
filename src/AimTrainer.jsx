@@ -113,6 +113,28 @@ export default function AimTrainer() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Block touch / mobile devices — the trainer needs a real mouse + Pointer Lock.
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const ua = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile|BlackBerry/i.test(
+      navigator.userAgent || ''
+    );
+    const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
+    const noLock = !document.documentElement.requestPointerLock;
+    return ua || coarse || noLock;
+  });
+  useEffect(() => {
+    const check = () => {
+      const ua = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile|BlackBerry/i.test(
+        navigator.userAgent || ''
+      );
+      const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
+      const noLock = !document.documentElement.requestPointerLock;
+      setIsMobile(ua || coarse || noLock);
+    };
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [hasPlayed, setHasPlayed] = useState(false);
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS);
   const [score, setScore] = useState(0);
@@ -701,6 +723,25 @@ export default function AimTrainer() {
   }, [isFullscreen]);
 
   /* -------------------------------- Render ---------------------------------- */
+  // Mobile / touch devices can't aim — show a "use a desktop" screen instead.
+  if (isMobile) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-val-dark px-8 text-center font-mono text-slate-200">
+        <div className="text-6xl">🖱️</div>
+        <h1 className="text-2xl font-black tracking-widest text-val-red">
+          VALORANT AIM TRAINER
+        </h1>
+        <p className="max-w-sm text-sm leading-relaxed text-slate-300">
+          This trainer needs a <span className="font-bold text-white">mouse</span> and
+          the Pointer Lock API, which aren&apos;t available on phones or tablets.
+        </p>
+        <p className="max-w-sm text-sm font-bold text-val-accent">
+          Please open it on a PC or laptop 💻
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={rootRef}
