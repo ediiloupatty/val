@@ -7,7 +7,19 @@ const BG_URL = '/img/jett-background.webp';
 export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best }) {
   const [panel, setPanel] = useState(null); // 'profile' | 'credits' | null
   const [showMobileModal, setShowMobileModal] = useState(false);
+  const [tempName, setTempName] = useState(name);
   const t = TEXT[lang] || TEXT.en;
+
+  useEffect(() => {
+    setTempName(name);
+  }, [name]);
+
+  const handleSave = () => {
+    const trimmed = tempName.trim();
+    if (trimmed && trimmed !== name) {
+      setName(trimmed);
+    }
+  };
 
   return (
     <div
@@ -73,12 +85,30 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <span className="mb-1 block text-[10px] uppercase tracking-widest text-slate-400">
               {t.displayName}
             </span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={20}
-              className="w-full rounded bg-black/40 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-val-red"
-            />
+            <div className="flex gap-2">
+              <input
+                value={tempName}
+                onChange={(e) => setTempName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSave();
+                  }
+                }}
+                maxLength={20}
+                className="flex-1 rounded bg-black/40 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-val-red"
+              />
+              <button
+                onClick={handleSave}
+                disabled={tempName.trim() === name || !tempName.trim()}
+                className={`rounded px-4 py-2 text-sm font-bold uppercase tracking-wider text-white transition ${
+                  tempName.trim() === name || !tempName.trim()
+                    ? 'bg-slate-700/50 text-slate-400 cursor-not-allowed'
+                    : 'bg-val-red hover:brightness-110'
+                }`}
+              >
+                {t.save}
+              </button>
+            </div>
           </label>
           <div className="grid grid-cols-3 gap-2">
             <Stat label={t.bestScore} value={best.score} accent />

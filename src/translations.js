@@ -9,7 +9,7 @@ export const TEXT = {
     bestScore: 'Best Score',
     bestAcc: 'Best Acc',
     bestSplit: 'Best Split',
-    profileTip: 'Stats are saved locally in your browser. Beat your own records! 🎯',
+    profileTip: 'Stats are synchronized to the cloud. Beat your own records! 🎯',
     madeBy: 'Made by',
     model3d: '3D model',
     builtWith: 'Built with',
@@ -20,6 +20,7 @@ export const TEXT = {
     mobileTitle: 'PC Required',
     mobileText: 'This trainer needs a keyboard & mouse to lock the pointer. On mobile devices, you can view the Profile and Credits, but the practice arena is disabled.',
     gotIt: 'Got It',
+    save: 'Save',
 
     // Aim Trainer
     subtitle: 'Aim Trainer',
@@ -68,7 +69,7 @@ export const TEXT = {
     bestScore: 'Skor Terbaik',
     bestAcc: 'Akurasi Terbaik',
     bestSplit: 'Jeda Terbaik',
-    profileTip: 'Statistik disimpan lokal di browser Anda. Kalahkan rekor Anda sendiri! 🎯',
+    profileTip: 'Statistik disinkronkan ke cloud. Kalahkan rekor Anda sendiri! 🎯',
     madeBy: 'Dibuat oleh',
     model3d: 'Model 3D',
     builtWith: 'Dibuat dengan',
@@ -79,6 +80,7 @@ export const TEXT = {
     mobileTitle: 'Butuh PC/Laptop',
     mobileText: 'Latihan membidik ini membutuhkan mouse & keyboard di PC. Di perangkat HP/tablet, Anda hanya dapat melihat Profil dan Kredit, sementara arena latihan dinonaktifkan.',
     gotIt: 'Dimengerti',
+    save: 'Simpan',
 
     // Aim Trainer
     subtitle: 'Latihan Aim',
