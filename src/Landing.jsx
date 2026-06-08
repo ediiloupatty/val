@@ -175,7 +175,6 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <ol className="space-y-1.5">
               {board.map((row, i) => {
                 const isYou = row.name === name;
-                const medal = ['🥇', '🥈', '🥉'][i];
                 return (
                   <li
                     key={i}
@@ -183,8 +182,12 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
                       isYou ? 'bg-val-red/15 ring-1 ring-val-red/40' : 'bg-black/30'
                     }`}
                   >
-                    <span className="w-7 shrink-0 text-center text-sm font-black tabular-nums text-slate-400">
-                      {medal || i + 1}
+                    <span
+                      className={`w-7 shrink-0 text-center text-sm font-black tabular-nums ${
+                        i === 0 ? 'text-val-accent' : 'text-slate-400'
+                      }`}
+                    >
+                      {i + 1}
                     </span>
                     <span className="flex-1 truncate text-sm font-bold text-white">
                       {row.name}
