@@ -28,56 +28,23 @@ export default function App() {
   const [deviceId] = useState(() => getDeviceId());
 
   // Profile and High Scores State
-  const [name, setName] = useState(() => localStorage.getItem('vat_name') || 'Agent');
-  const [best, setBest] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('vat_best')) || { score: 0, accuracy: 0, split: 0 };
-    } catch {
-      return { score: 0, accuracy: 0, split: 0 };
-    }
-  });
+  const [name, setName] = useState('Agent');
+  const [best, setBest] = useState({ score: 0, accuracy: 0, split: 0 });
 
-  // Background Sync on Mount
+  // Load Profile on Mount from Cloudflare D1
   useEffect(() => {
-    async function syncProfile() {
-      const r2Data = await fetchProfile(deviceId);
-      if (!r2Data) return;
-
-      setBest((localBest) => {
-        const r2Best = r2Data.best || { score: 0, accuracy: 0, split: 0 };
-        // Merge rules: take the best metrics
-        const mergedBest = {
-          score: Math.max(localBest.score, r2Best.score),
-          accuracy: Math.max(localBest.accuracy, r2Best.accuracy),
-          split: r2Best.split > 0 ? (localBest.split ? Math.min(localBest.split, r2Best.split) : r2Best.split) : localBest.split
-        };
-
-        setName((localName) => {
-          // R2 name takes precedence if local is default or r2 has a set name
-          const mergedName = r2Data.name && r2Data.name !== 'Agent' ? r2Data.name : localName;
-          
-          // Save merged result back to localStorage
-          try {
-            localStorage.setItem('vat_name', mergedName);
-            localStorage.setItem('vat_best', JSON.stringify(mergedBest));
-          } catch (e) {}
-
-          // If local data was better/newer than R2, push the merged stats back to R2
-          const isLocalBetter = localBest.score > r2Best.score || 
-                               (localBest.score === r2Best.score && localBest.accuracy > r2Best.accuracy) ||
-                               (localName !== 'Agent' && r2Data.name === 'Agent');
-          if (isLocalBetter) {
-            saveProfile(deviceId, mergedName, mergedBest);
-          }
-
-          return mergedName;
-        });
-
-        return mergedBest;
-      });
+    async function loadProfile() {
+      const dbData = await fetchProfile(deviceId);
+      if (dbData) {
+        if (dbData.name) {
+          setName(dbData.name);
+        }
+        if (dbData.best) {
+          setBest(dbData.best);
+        }
+      }
     }
-
-    syncProfile();
+    loadProfile();
   }, [deviceId]);
 
   useEffect(() => {
@@ -96,9 +63,6 @@ export default function App() {
   const handleSetName = (updater) => {
     setName((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem('vat_name', next);
-      } catch (e) {}
       saveProfile(deviceId, next, best);
       return next;
     });
@@ -107,9 +71,6 @@ export default function App() {
   const handleSetBest = (updater) => {
     setBest((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem('vat_best', JSON.stringify(next));
-      } catch (e) {}
       saveProfile(deviceId, name, next);
       return next;
     });
