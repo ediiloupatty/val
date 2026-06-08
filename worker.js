@@ -1,10 +1,36 @@
+// Origins allowed to call this API.
+const ALLOWED_ORIGINS = [
+  "https://aimku.xyz",
+  "https://www.aimku.xyz",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    // Allow Vercel preview deploys (e.g. https://val-xxxx.vercel.app)
+    return /\.vercel\.app$/.test(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function corsFor(request) {
+  const origin = request.headers.get("Origin") || "";
+  return {
+    // Echo the origin when allowed; otherwise lock responses to the prod domain.
+    "Access-Control-Allow-Origin": isAllowedOrigin(origin) ? origin : "https://aimku.xyz",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
+    const corsHeaders = corsFor(request);
 
     // Handle CORS preflight request
     if (request.method === "OPTIONS") {

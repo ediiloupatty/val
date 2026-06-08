@@ -21,3 +21,6 @@ pnpm-debug.log*
 
 # Cloudflare Wrangler
 .wrangler/
+
+# Local design sources / asset backups (originals; optimized versions live in public/)
+design/

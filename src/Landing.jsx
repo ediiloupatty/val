@@ -54,7 +54,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
       </header>
 
       {/* ---------- Left menu ---------- */}
-      <nav className="absolute left-6 md:left-12 top-1/2 flex -translate-y-1/2 flex-col gap-3">
+      <nav className="absolute left-6 md:left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-3">
         <button
           onClick={isMobile ? () => setShowMobileModal(true) : onPlay}
           className="group flex items-center gap-3 text-left"
@@ -74,7 +74,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
       </nav>
 
       {/* ---------- Footer ---------- */}
-      <footer className="absolute bottom-4 left-6 right-6 md:left-8 md:right-auto text-[9px] md:text-[10px] tracking-widest text-slate-500 leading-normal">
+      <footer className="absolute bottom-4 left-6 right-6 md:left-8 md:right-auto z-10 text-[9px] md:text-[10px] tracking-widest text-slate-500 leading-normal">
         {t.footerText}
       </footer>
 

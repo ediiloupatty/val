@@ -30,8 +30,8 @@ export function getDeviceId() {
 }
 
 /**
- * Fetches the user profile and best scores from Cloudflare R2 via the Worker backend.
- * Returns null if the fetch fails.
+ * Fetches the user profile and best scores from the Cloudflare D1 database
+ * via the Worker backend. Returns null if the fetch fails.
  */
 export async function fetchProfile(deviceId) {
   if (!deviceId) return null;
@@ -42,13 +42,14 @@ export async function fetchProfile(deviceId) {
       return json.success ? json.data : null;
     }
   } catch (err) {
-    console.warn('[API] Could not fetch profile from Cloudflare R2:', err.message);
+    console.warn('[API] Could not fetch profile from Cloudflare D1:', err.message);
   }
   return null;
 }
 
 /**
- * Synchronizes the local profile details (name and high scores) to R2 storage.
+ * Synchronizes the local profile details (name and high scores) to the
+ * Cloudflare D1 database (upsert by deviceId).
  */
 export async function saveProfile(deviceId, name, best) {
   if (!deviceId) return;
@@ -64,6 +65,6 @@ export async function saveProfile(deviceId, name, best) {
       console.warn('[API] Worker responded with status:', res.status);
     }
   } catch (err) {
-    console.warn('[API] Could not sync profile to Cloudflare R2:', err.message);
+    console.warn('[API] Could not sync profile to Cloudflare D1:', err.message);
   }
 }

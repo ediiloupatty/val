@@ -59,6 +59,11 @@ const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head'];
  */
 const VALORANT_YAW_CONSTANT = 0.07;
 
+// Valorant uses a fixed ~103° horizontal FOV. Three.js cameras take a *vertical*
+// FOV, so we derive it from the screen aspect to avoid the over-wide, distorted
+// look (which makes panning sideways feel swimmy/heavy).
+const VALORANT_HFOV = 103;
+
 export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setBest }) {
   const mountRef = useRef(null);
   const rootRef = useRef(null);
@@ -174,7 +179,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     scene.fog = new THREE.Fog(0x3e4d57, 16, 46);
 
     const camera = new THREE.PerspectiveCamera(
-      90, // FOV close to Valorant's feel
+      71, // vertical FOV placeholder — recomputed by setFov() from VALORANT_HFOV
       mount.clientWidth / mount.clientHeight,
       0.1,
       200
@@ -184,6 +189,16 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     // The viewmodel is parented to the camera, so the camera must be part of
     // the scene graph for its children to render.
     scene.add(camera);
+
+    // Keep a Valorant-like ~103° horizontal FOV on any aspect ratio.
+    const setFov = () => {
+      const aspect = mount.clientWidth / mount.clientHeight;
+      const hfov = THREE.MathUtils.degToRad(VALORANT_HFOV);
+      camera.aspect = aspect;
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / aspect));
+      camera.updateProjectionMatrix();
+    };
+    setFov();
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -390,22 +405,33 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     // --- Pointer Lock controls ------------------------------------------------
     let yaw = 0;
     let pitch = 0;
+    let justLocked = false; // skip the first move after (re)locking — see below
+    // Any single event larger than this (px) is a Pointer Lock glitch, not real
+    // input, so we drop it. Normal aim is well under this even on fast flicks.
+    const SPIKE = 400;
 
     function onPointerMove(e) {
       if (document.pointerLockElement !== canvas) return;
+
+      // The browser often reports a huge bogus delta on the first event right
+      // after lock is (re)acquired (cursor jumping from its old position) — skip.
+      if (justLocked) {
+        justLocked = false;
+        return;
+      }
+
+      // Use the event's own delta (reliable). We render once per frame, so
+      // summing getCoalescedEvents() added no visual benefit and could feed in
+      // spurious spikes — that was the "sudden flick" bug.
+      const dx = e.movementX || 0;
+      const dy = e.movementY || 0;
+
+      // Reject non-physical spikes in any direction (up/down/sideways).
+      if (Math.abs(dx) > SPIKE || Math.abs(dy) > SPIKE) return;
+
       const rotPerCount = THREE.MathUtils.degToRad(
         cfgRef.current.sensitivity * VALORANT_YAW_CONSTANT
       );
-      // (A) Drain every raw sub-frame sample from high-Hz mice so no mouse
-      // movement is lost to event-coalescing — smoother, more precise flicks.
-      const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-      const samples = coalesced.length ? coalesced : [e];
-      let dx = 0;
-      let dy = 0;
-      for (const s of samples) {
-        dx += s.movementX;
-        dy += s.movementY;
-      }
       yaw -= dx * rotPerCount;
       pitch -= dy * rotPerCount;
       pitch = Math.max(-1.5, Math.min(1.5, pitch)); // clamp look up/down
@@ -434,6 +460,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
     function onPointerLockChange() {
       const locked = document.pointerLockElement === canvas;
+      if (locked) justLocked = true; // ignore the first (often bogus) delta
       engine.current.setLocked(locked);
     }
 
@@ -489,11 +516,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
     // --- Resize ---------------------------------------------------------------
     function onResize() {
-      const w = mount.clientWidth;
-      const h = mount.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      setFov(); // recomputes aspect + vertical FOV from VALORANT_HFOV
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
     }
     window.addEventListener('resize', onResize);
 
