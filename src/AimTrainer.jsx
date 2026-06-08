@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /* ------------------------------------------------------------------ *
  * Valorant Aim Trainer — "Micro Flicks"
@@ -373,7 +374,11 @@ export default function AimTrainer() {
     // Warm "sawo matang" skin tone (typical Indonesian complexion).
     const handMat = new THREE.MeshStandardMaterial({ color: 0xc08a55, roughness: 0.8 });
 
-    const part = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, parent = weapon) => {
+    // Procedural gun parts live in their own group so we can hide them all at
+    // once if a realistic GLTF model loads successfully.
+    const gunProc = new THREE.Group();
+    weapon.add(gunProc);
+    const part = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, parent = gunProc) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.rotation.set(rx, ry, rz);
@@ -424,6 +429,7 @@ export default function AimTrainer() {
     // Bare forearm (skin) running back to the bottom-right corner of the screen.
     const lForearm = part(new THREE.CylinderGeometry(0.06, 0.08, 0.45, 14), handMat, 0.03, -0.28, 0.36);
     lForearm.rotation.set(1.15, 0, -0.05);
+    weapon.add(lForearm); // keep the arm even if a GLTF gun replaces the body
 
     // Muzzle flash (hidden until a shot fires).
     const muzzle = new THREE.Mesh(
@@ -449,6 +455,38 @@ export default function AimTrainer() {
     weapon.position.set(VM_BASE.x, VM_BASE.y, VM_BASE.z);
     weapon.rotation.set(VM_BASE.rx, VM_BASE.ry, VM_BASE.rz);
     camera.add(weapon);
+
+    /* ---------------- Realistic weapon model (GLTF, optional) ----------------
+     * Drop a revolver/cowboy .glb into  public/models/revolver.glb  and it will
+     * replace the procedural placeholder. Every model differs, so tweak the
+     * transform below until it sits right in the hand (use the live values).
+     * ---------------------------------------------------------------------- */
+    const MODEL_URL = '/models/revolver.glb';
+    const MODEL_TF = {
+      scale: 1.0, //  ← shrink/grow to fit (e.g. 0.1 if the model is life-size)
+      pos: [0.0, -0.05, -0.2], //  ← x (right), y (up), z (forward = negative)
+      rot: [0, 0, 0], //  ← radians; many models need ry = Math.PI/2 or Math.PI
+    };
+    new GLTFLoader().load(
+      MODEL_URL,
+      (gltf) => {
+        const model = gltf.scene;
+        model.scale.setScalar(MODEL_TF.scale);
+        model.position.set(...MODEL_TF.pos);
+        model.rotation.set(...MODEL_TF.rot);
+        gunProc.visible = false; // hide the procedural placeholder gun
+        weapon.add(model);
+      },
+      undefined,
+      () => {
+        // No file yet — keep the built-in placeholder and hint in the console.
+        console.info(
+          '[AimTrainer] No %s found — using the built-in placeholder gun. ' +
+            'Add a .glb revolver to public/models/ to use a realistic model.',
+          MODEL_URL
+        );
+      }
+    );
 
     let recoil = 0; // eased back to 0 each frame
     let muzzleTimer = 0;
