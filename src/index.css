@@ -11,6 +11,16 @@ body,
   overflow: hidden;
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 /* Slim range sliders to fit the gaming aesthetic */
 input[type='range'] {
   -webkit-appearance: none;
