@@ -103,6 +103,7 @@ export default function App() {
         name={name}
         setName={handleSetName}
         best={best}
+        deviceId={deviceId}
       />
     );
   }

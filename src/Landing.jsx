@@ -12,7 +12,7 @@ const CONTACT = {
   github: 'https://github.com/ediiloupatty', // ← your profile
 };
 
-export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best }) {
+export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best, deviceId }) {
   const [panel, setPanel] = useState(null); // 'profile' | 'credits' | 'support' | 'leaderboard' | null
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
@@ -174,7 +174,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           ) : (
             <ol className="space-y-1.5">
               {board.map((row, i) => {
-                const isYou = row.name === name;
+                const isYou = row.deviceId === deviceId;
                 const medal = ['🥇', '🥈', '🥉'][i];
                 return (
                   <li

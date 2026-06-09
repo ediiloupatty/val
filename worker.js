@@ -188,7 +188,7 @@ export default {
       try {
         const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { results } = await env.DB.prepare(`
-          SELECT COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split
+          SELECT s.device_id, COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split
           FROM scores s
           LEFT JOIN profiles p ON s.device_id = p.device_id
           WHERE s.created_at >= ?
@@ -198,6 +198,7 @@ export default {
         `).bind(weekAgo).all();
 
         const data = (results || []).map((row) => ({
+          deviceId: row.device_id,
           name: row.name,
           score: Number(row.score) || 0,
           accuracy: Number(row.accuracy) || 0,
