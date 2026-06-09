@@ -847,7 +847,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   useEffect(() => {
     const id = setTimeout(() => engine.current?.resize(), 60);
     return () => clearTimeout(id);
-  }, [isFullscreen, isRunning]);
+  }, [isFullscreen, isRunning, isLocked]);
 
   /* -------------------------------- Render ---------------------------------- */
   // Mobile / touch devices can't aim — show a "use a desktop" screen instead.
@@ -870,7 +870,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       className="flex h-screen w-screen bg-val-dark font-sans text-slate-200 select-none"
     >
       {/* ============================ SIDEBAR ============================ */}
-      {!isFullscreen && !isRunning && (
+      {!isFullscreen && (!isRunning || !isLocked) && (
       <aside className="no-scrollbar flex h-full w-80 shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-2xl backdrop-saturate-150 p-6 shadow-[8px_0_32px_rgba(0,0,0,0.3)]">
         <header className="flex items-start justify-between">
           <div className="flex items-center gap-2.5">
@@ -889,9 +889,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           {onExit && (
             <button
               onClick={onExit}
-              disabled={isRunning}
               title="Menu"
-              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-sm transition-all hover:bg-white/20 disabled:opacity-40"
+              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-sm transition-all hover:bg-white/20"
             >
               ← Menu
             </button>
