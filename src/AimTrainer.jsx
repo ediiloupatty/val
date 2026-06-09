@@ -718,6 +718,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     setIsMoving(false);
     if (document.pointerLockElement) document.exitPointerLock();
     engine.current?.clearTargets();
+    
+    // Auto-exit fullscreen when the game ends
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
   }, []);
 
   const startPractice = useCallback(() => {
@@ -740,6 +745,12 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     runningRef.current = true;
     setIsRunning(true);
     engine.current.requestLock(); // button click is a valid user gesture
+    
+    // Auto-enter fullscreen when starting practice
+    if (!document.fullscreenElement && rootRef.current?.requestFullscreen) {
+      rootRef.current.requestFullscreen().catch(() => {});
+    }
+
     // Warm up audio context on the gesture.
     beep(0.0001, 0.01);
   }, [beep]);
