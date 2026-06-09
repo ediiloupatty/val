@@ -847,7 +847,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   useEffect(() => {
     const id = setTimeout(() => engine.current?.resize(), 60);
     return () => clearTimeout(id);
-  }, [isFullscreen]);
+  }, [isFullscreen, isRunning]);
 
   /* -------------------------------- Render ---------------------------------- */
   // Mobile / touch devices can't aim — show a "use a desktop" screen instead.
