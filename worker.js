@@ -188,10 +188,11 @@ export default {
       try {
         const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { results } = await env.DB.prepare(`
-          SELECT name, MAX(score) AS score, accuracy, split
-          FROM scores
-          WHERE created_at >= ?
-          GROUP BY device_id
+          SELECT COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split
+          FROM scores s
+          LEFT JOIN profiles p ON s.device_id = p.device_id
+          WHERE s.created_at >= ?
+          GROUP BY s.device_id
           ORDER BY score DESC
           LIMIT 10
         `).bind(weekAgo).all();
