@@ -309,7 +309,7 @@ function Modal({ title, children, onClose }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-[2rem] border border-white/20 bg-white/10 p-7 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-xl backdrop-saturate-150"
+        className="w-full max-w-md max-h-[85vh] overflow-y-auto no-scrollbar rounded-[2rem] border border-white/20 bg-white/10 p-7 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-xl backdrop-saturate-150"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
