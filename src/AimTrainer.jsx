@@ -183,6 +183,43 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   }, []);
   const hitSound = useCallback(() => beep(880, 0.08, 'square', 0.12), [beep]);
   const missSound = useCallback(() => beep(160, 0.1, 'sawtooth', 0.06), [beep]);
+  const fireSound = useCallback(() => {
+    let ctx = audioRef.current;
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      audioRef.current = ctx;
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    const t = ctx.currentTime;
+    
+    // Noise burst (Crack)
+    const bufferSize = ctx.sampleRate * 0.15;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = 3000;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.5, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+    noise.start(t);
+
+    // Thump (Punch)
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+    oscGain.gain.setValueAtTime(0.6, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+    osc.connect(oscGain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }, []);
 
   /* ----------------------- Three.js scene (init once) ----------------------- */
   useEffect(() => {
@@ -325,10 +362,22 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       }
     );
 
-    let recoil = 0; // eased back to 0 each frame
+    let vmRecoilZ = 0;
+    let vmRecoilRotX = 0;
+    let vmRecoilRotZ = 0;
+    let camRecoilPitch = 0;
+    let camRecoilYaw = 0;
     let muzzleTimer = 0;
+    const dyingTargets = [];
+
     function fireViewmodel() {
-      recoil = Math.min(recoil + 0.05, 0.1);
+      vmRecoilZ = 0.15; // sharp back
+      vmRecoilRotX = 0.12; // sharp pitch up
+      vmRecoilRotZ = (Math.random() - 0.5) * 0.15; // twist
+
+      camRecoilPitch += 0.012; // screen kick up
+      camRecoilYaw += (Math.random() - 0.5) * 0.006; // screen side kick
+
       muzzleTimer = 0.05;
       muzzle.visible = true;
       muzzle.rotation.z = Math.random() * Math.PI; // vary the flash shape
@@ -400,6 +449,12 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         t.material.dispose();
       }
       targets.length = 0;
+      for (const dtg of dyingTargets) {
+        scene.remove(dtg.mesh);
+        dtg.mesh.geometry.dispose();
+        dtg.mesh.material.dispose();
+      }
+      dyingTargets.length = 0;
     }
 
     function fillTargets() {
@@ -475,11 +530,12 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       yaw -= dx * rotPerCount;
       pitch -= dy * rotPerCount;
       pitch = Math.max(-1.5, Math.min(1.5, pitch)); // clamp look up/down
-      camera.rotation.set(pitch, yaw, 0);
+      camera.rotation.set(pitch + camRecoilPitch, yaw + camRecoilYaw, 0);
     }
 
     function onMouseDown() {
       if (!runningRef.current || document.pointerLockElement !== canvas) return;
+      fireSound();
       fireViewmodel(); // recoil + muzzle flash on every shot
       // Counter-Strafe: firing while moving scatters the shot away from the
       // crosshair (accurate only once you've stopped).
@@ -501,9 +557,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         // Destroy & respawn nearby.
         const idx = targets.indexOf(hitMesh);
         if (idx !== -1) targets.splice(idx, 1);
-        scene.remove(hitMesh);
-        hitMesh.geometry.dispose();
-        hitMesh.material.dispose();
+        
+        hitMesh.userData.dying = true;
+        dyingTargets.push({ mesh: hitMesh, age: 0 });
         respawn();
       } else {
         engine.current.onMiss();
@@ -600,10 +656,34 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         fpsAccum = 0;
       }
 
+      // --- Dying target pop animation ---
+      for (let i = dyingTargets.length - 1; i >= 0; i--) {
+        const dtg = dyingTargets[i];
+        dtg.age += dt;
+        if (dtg.age > 0.15) {
+          scene.remove(dtg.mesh);
+          dtg.mesh.geometry.dispose();
+          dtg.mesh.material.dispose();
+          dyingTargets.splice(i, 1);
+        } else {
+          const s = Math.max(0, 1 - Math.pow(dtg.age / 0.15, 3));
+          dtg.mesh.scale.set(s, s, s);
+        }
+      }
+
+      // --- Camera shake recovery ---
+      camRecoilPitch += (0 - camRecoilPitch) * Math.min(1, dt * 15);
+      camRecoilYaw += (0 - camRecoilYaw) * Math.min(1, dt * 15);
+      camera.rotation.set(pitch + camRecoilPitch, yaw + camRecoilYaw, 0);
+
       // --- Viewmodel recoil & muzzle flash (frame-rate independent) ---
-      recoil += (0 - recoil) * Math.min(1, dt * 16); // ease back to rest
-      weapon.position.z = VM_BASE.z + recoil;
-      weapon.rotation.x = VM_BASE.rx - recoil * 2.2;
+      vmRecoilZ += (0 - vmRecoilZ) * Math.min(1, dt * 12);
+      vmRecoilRotX += (0 - vmRecoilRotX) * Math.min(1, dt * 12);
+      vmRecoilRotZ += (0 - vmRecoilRotZ) * Math.min(1, dt * 12);
+      
+      weapon.position.z = VM_BASE.z + vmRecoilZ;
+      weapon.rotation.x = VM_BASE.rx - vmRecoilRotX;
+      weapon.rotation.z = VM_BASE.rz + vmRecoilRotZ;
       if (muzzleTimer > 0) {
         muzzleTimer -= dt;
         muzzleLight.intensity = Math.max(0, (muzzleTimer / 0.05) * 2.5);
