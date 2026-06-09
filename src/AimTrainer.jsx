@@ -871,7 +871,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     >
       {/* ============================ SIDEBAR ============================ */}
       {!isFullscreen && !isRunning && (
-      <aside className="no-scrollbar flex h-full w-80 shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-white/5 backdrop-blur-xl p-6 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
+      <aside className="no-scrollbar flex h-full w-80 shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-2xl backdrop-saturate-150 p-6 shadow-[8px_0_32px_rgba(0,0,0,0.3)]">
         <header className="flex items-start justify-between">
           <div className="flex items-center gap-2.5">
             <img
@@ -903,7 +903,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           <button
             onClick={() => setModeOpen((o) => !o)}
             disabled={isLocked}
-            className="flex w-full items-center justify-between rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md px-4 py-3 text-left shadow-inner transition-all hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-between rounded-2xl border border-white/20 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg px-4 py-3 text-left shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.15)] transition-all hover:from-white/20 hover:to-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>
               <span className="block text-[10px] uppercase tracking-widest text-slate-400">
@@ -938,7 +938,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         </div>
 
         {/* Timer */}
-        <div className="rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md p-4 text-center shadow-inner">
+        <div className="rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 backdrop-blur-lg p-4 text-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_4px_12px_rgba(0,0,0,0.1)]">
           <p className="text-[10px] uppercase tracking-widest text-slate-400">
             {t.timeRemaining}
           </p>
@@ -970,20 +970,20 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           <button
             onClick={startPractice}
             disabled={isRunning}
-            className="flex-1 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-md px-4 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-all hover:bg-white/30 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
+            className="flex-1 rounded-2xl bg-gradient-to-br from-white/20 to-white/10 border border-white/30 backdrop-blur-lg px-4 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_16px_rgba(0,0,0,0.2)] transition-all hover:from-white/30 hover:to-white/20 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
           >
             {isRunning ? t.running : t.startBtn.replace('▶ ', '')}
           </button>
           <button
             onClick={reset}
-            className="rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-200 shadow-sm transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
+            className="rounded-2xl border border-white/20 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-200 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all hover:from-white/10 hover:to-white/5 hover:scale-105 active:scale-95"
           >
             {t.reset}
           </button>
         </div>
 
         {/* Settings panel */}
-        <div className="mt-2 space-y-5 rounded-3xl bg-white/5 border border-white/10 p-5 shadow-inner">
+        <div className="mt-2 space-y-5 rounded-3xl bg-gradient-to-br from-white/5 to-transparent border border-white/10 backdrop-blur-md p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.1)]">
           <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-slate-400">
             {t.settings}
           </p>
@@ -1121,7 +1121,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
                   </p>
                   <button
                     onClick={startPractice}
-                    className="mt-6 rounded-3xl bg-white/20 border border-white/30 backdrop-blur-md px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-white shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] transition hover:bg-white/30 hover:scale-105 active:scale-95"
+                    className="mt-6 rounded-3xl bg-gradient-to-br from-white/20 to-white/10 border border-white/30 backdrop-blur-lg px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_32px_0_rgba(0,0,0,0.4)] transition hover:from-white/30 hover:to-white/20 hover:scale-105 active:scale-95"
                   >
                     {t.startBtn}
                   </button>
@@ -1155,7 +1155,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       {/* Confirm switching mode mid-round — it restarts the timer & score */}
       {pendingMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-md transition-all">
-          <div className="w-80 rounded-[2rem] border border-white/20 bg-white/10 p-7 text-center shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-xl backdrop-saturate-150">
+          <div className="w-80 rounded-[2rem] border border-white/20 bg-gradient-to-br from-white/10 to-white/5 p-7 text-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_8px_32px_0_rgba(0,0,0,0.4)] backdrop-blur-2xl backdrop-saturate-200">
             <p className="text-lg font-black uppercase tracking-widest text-val-red">
               {t.changeModeTitle}
             </p>
@@ -1172,13 +1172,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
             <div className="mt-5 flex gap-2">
               <button
                 onClick={confirmModeChange}
-                className="flex-1 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-md px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-all hover:bg-white/30 hover:scale-105 active:scale-95"
+                className="flex-1 rounded-2xl bg-gradient-to-br from-white/20 to-white/10 border border-white/30 backdrop-blur-lg px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_16px_rgba(0,0,0,0.2)] transition-all hover:from-white/30 hover:to-white/20 hover:scale-105 active:scale-95"
               >
                 {t.changeModeConfirm}
               </button>
               <button
                 onClick={() => setPendingMode(null)}
-                className="flex-1 rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-slate-200 shadow-sm transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
+                className="flex-1 rounded-2xl border border-white/20 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-slate-200 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all hover:from-white/10 hover:to-white/5 hover:scale-105 active:scale-95"
               >
                 {t.cancel}
               </button>
@@ -1202,7 +1202,7 @@ function Stat({ label, value, accent, good, bad, wide }) {
     : 'text-white';
   return (
     <div
-      className={`rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md p-3 shadow-inner ${wide ? 'col-span-2' : ''}`}
+      className={`rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 backdrop-blur-lg p-3 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] ${wide ? 'col-span-2' : ''}`}
     >
       <p className="text-[10px] uppercase tracking-widest text-slate-400">
         {label}
@@ -1271,7 +1271,7 @@ function Crosshair({ color, size, moving }) {
 
 function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t, splitLabel, onAgain }) {
   return (
-    <div className="w-[22rem] rounded-[2rem] border border-white/20 bg-white/10 p-7 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-xl backdrop-saturate-150">
+    <div className="w-[22rem] rounded-[2rem] border border-white/20 bg-gradient-to-br from-white/10 to-white/5 p-7 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_8px_32px_0_rgba(0,0,0,0.4)] backdrop-blur-2xl backdrop-saturate-200">
       <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
         {t.sessionComplete}
       </p>
@@ -1294,7 +1294,7 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
       </div>
       <button
         onClick={onAgain}
-        className="mt-6 w-full rounded-2xl bg-white/20 border border-white/30 backdrop-blur-md px-4 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-all hover:bg-white/30 hover:scale-105 active:scale-95"
+        className="mt-6 w-full rounded-2xl bg-gradient-to-br from-white/20 to-white/10 border border-white/30 backdrop-blur-lg px-4 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_16px_rgba(0,0,0,0.2)] transition-all hover:from-white/30 hover:to-white/20 hover:scale-105 active:scale-95"
       >
         {t.playAgain}
       </button>
@@ -1323,7 +1323,7 @@ function HitMarker({ color }) {
 
 function SummaryRow({ label, value }) {
   return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md px-4 py-3 shadow-inner">
+    <div className="rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 backdrop-blur-lg px-4 py-3 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]">
       <p className="text-[10px] uppercase tracking-widest text-slate-400">
         {label}
       </p>
