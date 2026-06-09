@@ -25,33 +25,33 @@ const MODES = {
   micro: {
     name: 'Micro Flicks',
     desc: 'Tight cluster at head height. Train tiny, precise corrections.',
-    count: 3, spreadX: 1.35, spreadY: 0.85, centerY: 0, sizeScale: 1, reflex: false,
+    count: 3, spreadX: 1.35, spreadY: 0.6, centerY: 0.1, sizeScale: 1, reflex: false,
   },
   wide: {
     name: 'Wide Flicks',
     desc: 'One far-flung target at a time — big, fast angle snaps.',
-    count: 1, spreadX: 5.5, spreadY: 1.4, centerY: 0.45, sizeScale: 1.15, reflex: false,
+    count: 1, spreadX: 5.5, spreadY: 0.8, centerY: 0.2, sizeScale: 1.15, reflex: false,
   },
   reflex: {
     name: 'Reflex Pop',
     desc: 'A single target pops at a random moment — destroy it ASAP.',
-    count: 1, spreadX: 4, spreadY: 1.3, centerY: 0.45, sizeScale: 1.2, reflex: true,
+    count: 1, spreadX: 4, spreadY: 0.7, centerY: 0.1, sizeScale: 1.2, reflex: true,
   },
   grid: {
     name: 'Target Switch',
     desc: 'Many targets spread wide. Clear fast, switch smoothly (gridshot).',
-    count: 6, spreadX: 4.8, spreadY: 1.5, centerY: 0.55, sizeScale: 0.9, reflex: false,
+    count: 6, spreadX: 4.8, spreadY: 1.0, centerY: 0.2, sizeScale: 0.9, reflex: false,
   },
   head: {
     name: 'Headshot Precision',
     desc: 'Small targets on the head line. Pure accuracy & placement.',
-    count: 3, spreadX: 2.4, spreadY: 0.45, centerY: 0.2, sizeScale: 0.55, reflex: false,
+    count: 3, spreadX: 2.4, spreadY: 0.2, centerY: 0.1, sizeScale: 0.55, reflex: false,
   },
   strafe: {
     name: 'Counter-Strafe',
     desc: 'Strafe with A / D. Your shots scatter while moving — stop (counter-strafe) before you fire.',
     // spreadY 0 → all targets sit on one flat head-height line (no high/low).
-    count: 3, spreadX: 2.6, spreadY: 0, centerY: 0.2, sizeScale: 1, reflex: false, counterStrafe: true,
+    count: 3, spreadX: 2.6, spreadY: 0, centerY: 0.1, sizeScale: 1, reflex: false, counterStrafe: true,
   },
 };
 const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe'];
