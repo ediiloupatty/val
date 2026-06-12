@@ -1219,7 +1219,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         {/* Top-right controls: FPS meter + fullscreen toggle */}
         <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
           <div
-            className={`rounded-full bg-black/40 border border-white/10 px-3 py-1.5 text-xs font-bold tabular-nums backdrop-blur-md shadow-sm ${
+            className={`rounded-full bg-black/40 border border-white/10 px-3 py-1.5 text-xs font-bold tabular-nums shadow-sm ${
               fps >= 120
                 ? 'text-emerald-400'
                 : fps >= 60
@@ -1232,7 +1232,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           <button
             onClick={toggleFullscreen}
             title={isFullscreen ? t.fsExit : t.fsEnter}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm leading-none text-slate-200 shadow-sm backdrop-blur-md transition-all hover:scale-105 hover:bg-black/60 active:scale-95"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm leading-none text-slate-200 shadow-sm transition-all hover:scale-105 hover:bg-black/60 active:scale-95"
           >
             {isFullscreen ? '🗗' : '⛶'}
           </button>
@@ -1263,7 +1263,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
         {/* Idle / paused overlays */}
         {!isRunning && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-all">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 transition-all">
             <div className="pointer-events-auto text-center">
               {hasPlayed && timeLeft === 0 ? (
                 <SessionSummary
@@ -1301,7 +1301,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         {/* Click-to-resume hint when running but pointer not locked */}
         {isRunning && !isLocked && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <p className="rounded-full border border-white/20 bg-black/50 backdrop-blur-md px-5 py-2.5 text-sm font-bold uppercase tracking-widest text-white shadow-lg">
+            <p className="rounded-full border border-white/20 bg-black/50 px-5 py-2.5 text-sm font-bold uppercase tracking-widest text-white shadow-lg">
               {t.resume}
             </p>
           </div>
@@ -1309,7 +1309,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
         {/* Live mini HUD top-center */}
         {isRunning && (
-          <div className="pointer-events-none absolute left-1/2 top-5 flex -translate-x-1/2 gap-8 rounded-full border border-white/10 bg-black/40 px-6 py-2.5 text-sm font-bold tabular-nums backdrop-blur-md shadow-md">
+          <div className="pointer-events-none absolute left-1/2 top-5 flex -translate-x-1/2 gap-8 rounded-full border border-white/10 bg-black/40 px-6 py-2.5 text-sm font-bold tabular-nums shadow-md">
             <span className="text-val-accent">{score}</span>
             <span className="text-slate-300">{accuracy.toFixed(0)}%</span>
             <span className={timeLeft <= 10 ? 'text-val-red' : 'text-white'}>
