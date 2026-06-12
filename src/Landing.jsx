@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
 import { fetchLeaderboard } from './api.js';
 
@@ -13,46 +13,103 @@ const CONTACT = {
 };
 
 export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best, deviceId }) {
-  const [panel, setPanel] = useState(null); // 'profile' | 'credits' | 'support' | 'leaderboard' | null
+  const [panel, setPanel] = useState(null);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
-  const [board, setBoard] = useState(null); // null = loading, [] = empty, [...] = rows
+  const [board, setBoard] = useState(null);
   const t = TEXT[lang] || TEXT.en;
 
-  useEffect(() => {
-    setTempName(name);
-  }, [name]);
+  // ---------- 3D parallax refs (no React state — driven by rAF) ----------
+  const bgRef     = useRef(null); // background image layer
+  const rafRef    = useRef(null);
+  const targetRef = useRef({ x: 0.5, y: 0.5 }); // raw mouse (0-1)
+  const curRef    = useRef({ x: 0.5, y: 0.5 }); // lerped position
 
-  // Load the weekly leaderboard each time its panel opens (always fresh).
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      targetRef.current = {
+        x: e.clientX / window.innerWidth,
+        y: e.clientY / window.innerHeight,
+      };
+    };
+
+    // Lerp factor — lower = smoother / more lag (feels "heavy" and cinematic).
+    const LERP = 0.055;
+    // Max parallax shift in px. The bg layer is oversized (-8% inset) to avoid clipping.
+    const MAX_X = 38;
+    const MAX_Y = 24;
+
+    const tick = () => {
+      const c = curRef.current;
+      const t = targetRef.current;
+      // Exponential lerp toward target
+      c.x += (t.x - c.x) * LERP;
+      c.y += (t.y - c.y) * LERP;
+
+      if (bgRef.current) {
+        const tx = (c.x - 0.5) * -MAX_X * 2;
+        const ty = (c.y - 0.5) * -MAX_Y * 2;
+        bgRef.current.style.transform = `scale(1.12) translate(${tx}px, ${ty}px)`;
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+  // -----------------------------------------------------------------------
+
+  useEffect(() => { setTempName(name); }, [name]);
+
   useEffect(() => {
     if (panel !== 'leaderboard') return;
     let alive = true;
     setBoard(null);
-    fetchLeaderboard().then((rows) => {
-      if (alive) setBoard(rows || []);
-    });
-    return () => {
-      alive = false;
-    };
+    fetchLeaderboard().then((rows) => { if (alive) setBoard(rows || []); });
+    return () => { alive = false; };
   }, [panel]);
 
   const handleSave = () => {
     const trimmed = tempName.trim();
-    if (trimmed && trimmed !== name) {
-      setName(trimmed);
-    }
+    if (trimmed && trimmed !== name) setName(trimmed);
   };
 
   return (
-    <div
-      className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none"
-      style={{
-        backgroundImage: `linear-gradient(90deg, rgba(15,20,25,0.96) 0%, rgba(15,20,25,0.72) 26%, rgba(15,20,25,0.22) 58%, rgba(15,20,25,0.55) 100%), radial-gradient(70% 90% at 50% 100%, rgba(15,20,25,0.6), transparent 60%), url('${BG_URL}')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center right',
-      }}
-    >
-      {/* Wind effect — flows right→left & slightly up, matching Jett's motion */}
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none">
+
+      {/* ---- Parallax background image — shifts with mouse (3D depth illusion) ---- */}
+      <div
+        ref={bgRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute"
+        style={{
+          // Oversized by 12% on each side so the translate never reveals a gap.
+          inset: '-8%',
+          backgroundImage: `url('${BG_URL}')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center right',
+          willChange: 'transform',
+        }}
+      />
+
+      {/* ---- Fixed gradient overlay — stays perfectly still ---- */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: [
+            'linear-gradient(90deg, rgba(15,20,25,0.96) 0%, rgba(15,20,25,0.72) 26%, rgba(15,20,25,0.22) 58%, rgba(15,20,25,0.55) 100%)',
+            'radial-gradient(70% 90% at 50% 100%, rgba(15,20,25,0.6), transparent 60%)',
+          ].join(', '),
+        }}
+      />
+
+      {/* Wind effect */}
       <WindFX />
       {/* ---------- Top bar ---------- */}
       <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-6 py-4 md:px-8 md:py-5">
