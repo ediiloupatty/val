@@ -17,6 +17,19 @@ function isAllowedOrigin(origin) {
   }
 }
 
+/**
+ * Validates that a deviceId matches the expected client-generated format.
+ * Although all queries use prepared statements (preventing SQL injection),
+ * this adds a data-integrity layer and rejects obviously invalid inputs early.
+ * Format: "dev-" followed by 10–60 alphanumeric/hyphen characters.
+ *
+ * TODO: For production-grade rate limiting, use Cloudflare KV or Durable Objects
+ * to track request counts per deviceId and return 429 when thresholds are exceeded.
+ */
+function isValidDeviceId(id) {
+  return typeof id === 'string' && /^dev-[a-zA-Z0-9\-]{10,60}$/.test(id);
+}
+
 function corsFor(request) {
   const origin = request.headers.get("Origin") || "";
   return {
@@ -54,6 +67,12 @@ export default {
       if (!deviceId) {
         return new Response(
           JSON.stringify({ success: false, error: "Missing required 'deviceId' parameter" }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      if (!isValidDeviceId(deviceId)) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Invalid deviceId format" }),
           { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
@@ -109,6 +128,12 @@ export default {
             { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
+        if (!isValidDeviceId(deviceId)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Invalid deviceId format" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
 
         const score = Number(best.score) || 0;
         const accuracy = Number(best.accuracy) || 0;
@@ -154,6 +179,12 @@ export default {
         if (!deviceId || !name || score == null) {
           return new Response(
             JSON.stringify({ success: false, error: "Missing required fields: deviceId, name, score" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        if (!isValidDeviceId(deviceId)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Invalid deviceId format" }),
             { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }

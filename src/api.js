@@ -1,7 +1,29 @@
 // Cloudflare Worker API url
 let API_URL = import.meta.env.VITE_API_URL || 'https://valorant-aim-trainer-backend.ediloupatty.workers.dev';
+// Defensive guard: if the env var was accidentally saved without the leading 'h'
+// (e.g. VITE_API_URL=ttps://...), restore the full URL.
 if (API_URL && API_URL.startsWith('ttps://')) {
   API_URL = 'https://' + API_URL.slice(7);
+}
+
+/**
+ * Fetch wrapper with an AbortController-based timeout.
+ * Prevents API calls from hanging indefinitely when the backend is unresponsive.
+ * @param {string} url
+ * @param {RequestInit} options
+ * @param {number} timeoutMs — default 8 s
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
 }
 
 /**
@@ -31,12 +53,12 @@ export function getDeviceId() {
 
 /**
  * Fetches the user profile and best scores from the Cloudflare D1 database
- * via the Worker backend. Returns null if the fetch fails.
+ * via the Worker backend. Returns null if the fetch fails or times out.
  */
 export async function fetchProfile(deviceId) {
   if (!deviceId) return null;
   try {
-    const res = await fetch(`${API_URL}/api/profile?deviceId=${deviceId}`);
+    const res = await fetchWithTimeout(`${API_URL}/api/profile?deviceId=${deviceId}`);
     if (res.ok) {
       const json = await res.json();
       return json.success ? json.data : null;
@@ -54,7 +76,7 @@ export async function fetchProfile(deviceId) {
 export async function saveProfile(deviceId, name, best) {
   if (!deviceId) return;
   try {
-    const res = await fetch(`${API_URL}/api/profile`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/profile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -76,7 +98,7 @@ export async function saveProfile(deviceId, name, best) {
 export async function submitScore(deviceId, name, session) {
   if (!deviceId || !session) return;
   try {
-    await fetch(`${API_URL}/api/score`, {
+    await fetchWithTimeout(`${API_URL}/api/score`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -98,7 +120,7 @@ export async function submitScore(deviceId, name, session) {
  */
 export async function fetchLeaderboard() {
   try {
-    const res = await fetch(`${API_URL}/api/leaderboard`);
+    const res = await fetchWithTimeout(`${API_URL}/api/leaderboard`);
     if (res.ok) {
       const json = await res.json();
       return json.success ? json.data : null;

@@ -56,6 +56,27 @@ const MODES = {
 };
 const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe'];
 
+/* ---- Settings defaults & loader (module scope — computed once, not per render) ----
+ * Keeping these outside the component avoids recreating the object literal and
+ * running the localStorage parse on every single re-render.
+ * ------------------------------------------------------------------------------------- */
+const SETTINGS_DEFAULTS = {
+  sensitivity: 0.35,
+  crosshairColor: '#00e5c0',
+  crosshairSize: 10,
+  targetSize: 0.28,
+  modeKey: 'micro',
+  lang: 'en',
+};
+
+function loadSettings() {
+  try {
+    return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('vat_settings')) };
+  } catch {
+    return SETTINGS_DEFAULTS;
+  }
+}
+
 /*
  * Valorant sensitivity matcher.
  * Valorant's yaw is a fixed 0.07° of rotation per mouse count, per 1.0 sens.
@@ -80,29 +101,18 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
   // --- Live config (mirrored into a ref so the engine reads fresh values) ---
   // Settings persist across refreshes via localStorage.
-  const SETTINGS_DEFAULTS = {
-    sensitivity: 0.35,
-    crosshairColor: '#00e5c0',
-    crosshairSize: 10,
-    targetSize: 0.28,
-    modeKey: 'micro',
-    lang: 'en',
-  };
-  const savedSettings = (() => {
-    try {
-      return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('vat_settings')) };
-    } catch {
-      return SETTINGS_DEFAULTS;
-    }
-  })();
+  // SETTINGS_DEFAULTS and loadSettings() are defined at module scope so they
+  // are never recreated on re-renders. Lazy useState initialisers ensure
+  // localStorage is read only once per mount, not on every render.
 
-  const [sensitivity, setSensitivity] = useState(savedSettings.sensitivity);
-  const [crosshairColor, setCrosshairColor] = useState(savedSettings.crosshairColor);
-  const [crosshairSize, setCrosshairSize] = useState(savedSettings.crosshairSize);
-  const [targetSize, setTargetSize] = useState(savedSettings.targetSize);
-  const [modeKey, setModeKey] = useState(
-    MODES[savedSettings.modeKey] ? savedSettings.modeKey : 'micro'
-  );
+  const [sensitivity, setSensitivity] = useState(() => loadSettings().sensitivity);
+  const [crosshairColor, setCrosshairColor] = useState(() => loadSettings().crosshairColor);
+  const [crosshairSize, setCrosshairSize] = useState(() => loadSettings().crosshairSize);
+  const [targetSize, setTargetSize] = useState(() => loadSettings().targetSize);
+  const [modeKey, setModeKey] = useState(() => {
+    const key = loadSettings().modeKey;
+    return MODES[key] ? key : 'micro';
+  });
   const mode = MODES[modeKey] || MODES.micro;
   const [modeOpen, setModeOpen] = useState(false);
   const [pendingMode, setPendingMode] = useState(null); // mode awaiting "restart timer" confirm
@@ -151,6 +161,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   const [newHigh, setNewHigh] = useState(false);
   const splitRef = useRef({ sum: 0, count: 0, last: 0 });
   const popupSeq = useRef(0);
+  // Tracks pending popup timeouts so we can cancel them on unmount and avoid
+  // "can't perform a React state update on an unmounted component" warnings.
+  const popupTimeouts = useRef([]);
 
   const shots = hits + misses;
   const accuracy = shots > 0 ? (hits / shots) * 100 : 0;
@@ -159,8 +172,15 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   const addPopup = useCallback((text, color) => {
     const id = ++popupSeq.current;
     setPopups((p) => [...p, { id, text, color, dx: Math.random() * 70 - 35 }]);
-    setTimeout(() => setPopups((p) => p.filter((x) => x.id !== id)), 650);
+    const tid = setTimeout(() => {
+      setPopups((p) => p.filter((x) => x.id !== id));
+      popupTimeouts.current = popupTimeouts.current.filter((t) => t !== tid);
+    }, 650);
+    popupTimeouts.current.push(tid);
   }, []);
+
+  // Cancel all pending popup timers on unmount (prevents state updates after unmount).
+  useEffect(() => () => { popupTimeouts.current.forEach(clearTimeout); }, []);
 
   /* --------------------------- Audio (procedural) --------------------------- */
   const audioRef = useRef(null);
@@ -353,10 +373,26 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     const targets = [];
     let reflexTimer = null; // pending delayed spawn for Reflex Pop mode
 
+    // Geometry cache — reuse SphereGeometry instances by radius key instead of
+    // allocating a new one per target. This eliminates repeated GC pressure on
+    // every hit/spawn cycle (up to ~1200+ allocs per session in grid mode).
+    // IMPORTANT: clearTargets() must NOT dispose cached geometries — only materials.
+    //            Cached geometries are bulk-disposed during full engine teardown.
+    const geoCache = new Map();
+    function getCachedGeo(r) {
+      const key = r.toFixed(3);
+      if (!geoCache.has(key)) {
+        // Fewer segments for small targets (visually indistinguishable at play distance).
+        const segs = r < 0.2 ? 12 : 16;
+        geoCache.set(key, new THREE.SphereGeometry(r, segs, segs));
+      }
+      return geoCache.get(key);
+    }
+
     function spawnTarget() {
       const mode = cfgRef.current.mode;
       const r = cfgRef.current.targetSize * mode.sizeScale;
-      const geo = new THREE.SphereGeometry(r, 20, 20);
+      const geo = getCachedGeo(r);
       const isRed = Math.random() < 0.5;
       const color = isRed ? 0xff4655 : 0x00e5c0;
       const mat = new THREE.MeshStandardMaterial({
@@ -409,13 +445,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       }
       for (const t of targets) {
         scene.remove(t);
-        t.geometry.dispose();
+        // Geometry is shared in geoCache — only dispose the per-instance material.
         t.material.dispose();
       }
       targets.length = 0;
       for (const dtg of dyingTargets) {
         scene.remove(dtg.mesh);
-        dtg.mesh.geometry.dispose();
+        // Geometry is shared in geoCache — only dispose the per-instance material.
         dtg.mesh.material.dispose();
       }
       dyingTargets.length = 0;
@@ -631,7 +667,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         dtg.age += dt;
         if (dtg.age > 0.15) {
           scene.remove(dtg.mesh);
-          dtg.mesh.geometry.dispose();
+          // Geometry is shared in geoCache — only dispose the per-instance material.
           dtg.mesh.material.dispose();
           dyingTargets.splice(i, 1);
         } else {
@@ -716,6 +752,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
       clearTargets();
+      // Bulk-dispose all cached geometries now that the engine is fully torn down.
+      geoCache.forEach((geo) => geo.dispose());
+      geoCache.clear();
       renderer.dispose();
       if (canvas.parentNode === mount) mount.removeChild(canvas);
       engine.current = null;
@@ -861,7 +900,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     const id = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
-          endGame();
+          // Keep the state-updater function pure (no side effects inside setState).
+          // queueMicrotask runs endGame() right after this setState batch commits.
+          queueMicrotask(() => endGame());
           return 0;
         }
         return t - 1;
