@@ -745,7 +745,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
 
       renderer.render(scene, camera);
     }
-    animate();
 
     // --- Resize ---------------------------------------------------------------
     function onResize() {
@@ -784,6 +783,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       onBloom:    () => {},
       onVig:      () => {},
     };
+
+    // Start render loop AFTER engine.current is fully initialized
+    // so the null-guard in animate() doesn't falsely trigger on the first frame.
+    animate();
 
     return () => {
       cancelAnimationFrame(animId);
