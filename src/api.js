@@ -99,13 +99,13 @@ export async function saveProfile(deviceId, name, best) {
  * later required by submitScore(), so the leaderboard only accepts scores from a
  * session this backend authorized. Returns the token string or null on failure.
  */
-export async function startSession(deviceId) {
+export async function startSession(deviceId, turnstileToken) {
   if (!deviceId) return null;
   try {
     const res = await fetchWithTimeout(`${API_URL}/api/session/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId }),
+      body: JSON.stringify({ deviceId, turnstileToken }),
     });
     if (res.ok) {
       const json = await res.json();
@@ -144,8 +144,9 @@ export async function submitScore(deviceId, name, session, token) {
 }
 
 /**
- * Fetches the player's weekly leaderboard rank (1-based) for the share card.
- * Returns the rank number, or null if unranked / on failure.
+ * Fetches the player's weekly leaderboard standing for the share card and the
+ * "your rank" row. Returns { rank, score } (rank is 1-based), or null if
+ * unranked / on failure.
  */
 export async function fetchRank(deviceId) {
   if (!deviceId) return null;
@@ -153,7 +154,7 @@ export async function fetchRank(deviceId) {
     const res = await fetchWithTimeout(`${API_URL}/api/rank?deviceId=${deviceId}`);
     if (res.ok) {
       const json = await res.json();
-      return json.success ? json.rank : null;
+      return json.success && json.rank ? { rank: json.rank, score: json.score } : null;
     }
   } catch (err) {
     console.warn('[API] Could not fetch rank:', err.message);
@@ -165,9 +166,10 @@ export async function fetchRank(deviceId) {
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */
-export async function fetchLeaderboard() {
+export async function fetchLeaderboard(range = 'week') {
   try {
-    const res = await fetchWithTimeout(`${API_URL}/api/leaderboard`);
+    const qs = range === 'all' ? '?range=all' : '';
+    const res = await fetchWithTimeout(`${API_URL}/api/leaderboard${qs}`);
     if (res.ok) {
       const json = await res.json();
       return { rows: json.success ? json.data : [], error: false };

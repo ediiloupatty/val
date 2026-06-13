@@ -10,8 +10,9 @@ function isAllowedOrigin(origin) {
   if (!origin) return false;
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
-    // Allow Vercel preview deploys (e.g. https://val-xxxx.vercel.app)
-    return /\.vercel\.app$/.test(new URL(origin).hostname);
+    // Allow only THIS project's Vercel deploys (e.g. https://val-xxxx.vercel.app),
+    // not any *.vercel.app site — so an arbitrary attacker page can't request tokens.
+    return /^val[a-z0-9-]*\.vercel\.app$/.test(new URL(origin).hostname);
   } catch {
     return false;
   }
@@ -251,6 +252,27 @@ async function verifySession(secret, token) {
   return { ok: true, deviceId, nonce };
 }
 
+// Verifies a Cloudflare Turnstile token with the siteverify API. Only enforced
+// when TURNSTILE_SECRET is configured; otherwise the caller skips the check so
+// the app keeps working without Turnstile set up (graceful degradation).
+async function verifyTurnstile(secret, token, ip) {
+  if (!token) return false;
+  try {
+    const body = new URLSearchParams({ secret, response: token });
+    if (ip) body.set('remoteip', ip);
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const data = await res.json();
+    return data.success === true;
+  } catch (err) {
+    console.error('turnstile verify error:', err);
+    return false;
+  }
+}
+
 function corsFor(request) {
   const origin = request.headers.get("Origin") || "";
   return {
@@ -330,8 +352,9 @@ export default {
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("profile GET error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Database error fetching profile: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not fetch profile" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
@@ -398,8 +421,9 @@ export default {
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("profile POST error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Database error saving profile: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not save profile" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
@@ -415,12 +439,23 @@ export default {
         );
       }
       try {
-        const { deviceId } = await request.json();
+        const { deviceId, turnstileToken } = await request.json();
         if (!isValidDeviceId(deviceId)) {
           return new Response(
             JSON.stringify({ success: false, error: "Invalid deviceId format" }),
             { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
+        }
+        // Bot check (only enforced when Turnstile is configured). Makes farming
+        // fresh device IDs in bulk much harder.
+        if (env.TURNSTILE_SECRET) {
+          const ip = request.headers.get('CF-Connecting-IP') || '';
+          if (!(await verifyTurnstile(env.TURNSTILE_SECRET, turnstileToken, ip))) {
+            return new Response(
+              JSON.stringify({ success: false, error: "Bot verification failed" }),
+              { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+            );
+          }
         }
         // Rate limit token issuance so an attacker can't farm tokens in bulk.
         if (!(await withinRateLimit(env, request, deviceId))) {
@@ -435,8 +470,9 @@ export default {
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("session start error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Could not start session: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not start session" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
@@ -535,8 +571,9 @@ export default {
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("score POST error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Database error saving score: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not save score" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
@@ -560,28 +597,34 @@ export default {
             SELECT device_id, MAX(score) AS s
             FROM scores WHERE created_at >= ? GROUP BY device_id
           )
-          SELECT (SELECT COUNT(*) FROM best b2 WHERE b2.s > b1.s) + 1 AS rank
+          SELECT (SELECT COUNT(*) FROM best b2 WHERE b2.s > b1.s) + 1 AS rank, b1.s AS score
           FROM best b1 WHERE b1.device_id = ?
         `).bind(weekAgo, deviceId).all();
-        const rank = results && results.length ? Number(results[0].rank) : null;
+        const row = results && results.length ? results[0] : null;
+        const rank = row ? Number(row.rank) : null;
+        const score = row ? Number(row.score) : null;
         return new Response(
-          JSON.stringify({ success: true, rank }),
+          JSON.stringify({ success: true, rank, score }),
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("rank error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Database error fetching rank: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not fetch rank" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
     }
 
-    // GET /api/leaderboard — top 10 scores achieved in the last 7 days.
+    // GET /api/leaderboard[?range=all] — top 10 scores. Defaults to the last 7
+    // days; range=all returns the all-time top 10.
     // SQLite "bare column" rule: with a single MAX(), the name/accuracy/split
     // columns are taken from the same row as that max score (one per device).
     if (path === "/api/leaderboard" && request.method === "GET") {
       try {
-        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const allTime = url.searchParams.get("range") === "all";
+        const since = allTime ? "1970-01-01T00:00:00.000Z"
+          : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { results } = await env.DB.prepare(`
           SELECT s.device_id, COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split
           FROM scores s
@@ -590,7 +633,7 @@ export default {
           GROUP BY s.device_id
           ORDER BY score DESC
           LIMIT 10
-        `).bind(weekAgo).all();
+        `).bind(since).all();
 
         const data = (results || []).map((row) => ({
           deviceId: row.device_id,
@@ -605,8 +648,9 @@ export default {
           { headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
+        console.error("leaderboard error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Database error fetching leaderboard: " + err.message }),
+          JSON.stringify({ success: false, error: "Could not fetch leaderboard" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }

@@ -1,8 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Landing from './Landing.jsx';
-import AimTrainer from './AimTrainer.jsx';
 import { getDeviceId, fetchProfile, saveProfile, submitScore, startSession } from './api.js';
+import { getTurnstileToken } from './turnstile.js';
 import { TEXT } from './translations.js';
+
+// Code-split the trainer: Three.js (~500KB) only loads when entering the arena,
+// keeping the landing page fast to open.
+const AimTrainer = lazy(() => import('./AimTrainer.jsx'));
 
 let toastSeq = 0;
 
@@ -130,7 +134,9 @@ export default function App() {
   // time to resolve before the score is submitted).
   const handleRoundStart = useCallback(() => {
     sessionTokenRef.current = null;
-    startSession(deviceId).then((token) => { sessionTokenRef.current = token; });
+    getTurnstileToken()
+      .then((turnstileToken) => startSession(deviceId, turnstileToken))
+      .then((token) => { sessionTokenRef.current = token; });
   }, [deviceId]);
 
   // Log a finished session to the weekly leaderboard (best score also synced
@@ -168,19 +174,27 @@ export default function App() {
           showToast={showToast}
         />
       ) : (
-        <AimTrainer
-          onExit={() => setView('landing')}
-          lang={lang}
-          setLang={handleSetLang}
-          isMobile={isMobile}
-          name={name}
-          setName={handleSetName}
-          best={best}
-          setBest={handleSetBest}
-          onSession={handleSession}
-          onRoundStart={handleRoundStart}
-          showToast={showToast}
-        />
+        <Suspense
+          fallback={
+            <div className="flex h-[100dvh] w-screen items-center justify-center bg-val-dark">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-[#00e5c0]" />
+            </div>
+          }
+        >
+          <AimTrainer
+            onExit={() => setView('landing')}
+            lang={lang}
+            setLang={handleSetLang}
+            isMobile={isMobile}
+            name={name}
+            setName={handleSetName}
+            best={best}
+            setBest={handleSetBest}
+            onSession={handleSession}
+            onRoundStart={handleRoundStart}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
     </>
   );

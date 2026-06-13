@@ -19,6 +19,8 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [tempName, setTempName] = useState(name);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
+  const [lbRange, setLbRange] = useState('week'); // 'week' | 'all'
+  const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   // Share-card state: the generated PNG (as an object URL for preview) + its Blob
   // (for the Web Share API), and a flag while the canvas is rendering.
   const [shareUrl, setShareUrl] = useState(null);
@@ -80,7 +82,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     let alive = true;
     setBoard(null);
     setBoardError(false);
-    fetchLeaderboard().then(({ rows, error }) => {
+    fetchLeaderboard(lbRange).then(({ rows, error }) => {
       if (!alive) return;
       if (error) {
         setBoardError(true);
@@ -94,9 +96,13 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
   useEffect(() => {
     if (panel !== 'leaderboard') return;
-    return loadLeaderboard();
+    const cleanup = loadLeaderboard();
+    // Weekly rank is fetched separately so we can show a "you" row when the
+    // player sits outside the visible top 10.
+    if (deviceId) fetchRank(deviceId).then(setMyRankInfo);
+    return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel]);
+  }, [panel, lbRange]);
 
   // Check for a session backup left by a browser crash / unexpected close.
   useEffect(() => {
@@ -141,7 +147,8 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const handleOpenShare = async () => {
     try {
       setSharing(true);
-      const r = deviceId ? await fetchRank(deviceId) : null;
+      const info = deviceId ? await fetchRank(deviceId) : null;
+      const r = info?.rank ?? null;
       setRank(r);
       await renderCard(template, showRank ? r : null);
       setPanel('share');
@@ -189,6 +196,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
         await navigator.share({
           title: t.shareCardTitle,
           text: t.shareText.replace('{score}', best.score),
+          url: 'https://aimku.xyz',
           files: [file],
         });
       } else {
@@ -450,10 +458,20 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
       {panel === 'leaderboard' && (
         <Modal title={t.leaderboard} onClose={() => setPanel(null)}>
-          <div className="-mt-2 mb-4 flex items-center justify-between">
-            <p className="text-[11px] uppercase tracking-widest text-slate-400">
-              {t.leaderboardSub}
-            </p>
+          <div className="-mt-2 mb-4 flex items-center justify-between gap-2">
+            <div className="flex rounded-full bg-white/5 p-0.5">
+              {[['week', t.lbWeekly], ['all', t.lbAllTime]].map(([r, label]) => (
+                <button
+                  key={r}
+                  onClick={() => setLbRange(r)}
+                  className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    lbRange === r ? 'bg-val-accent/20 text-val-accent' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button
               onClick={loadLeaderboard}
               disabled={board === null}
@@ -479,6 +497,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           ) : board.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">{t.leaderboardEmpty}</p>
           ) : (
+            <>
             <ol className="space-y-1.5">
               {board.map((row, i) => {
                 const isYou = row.deviceId === deviceId;
@@ -510,6 +529,25 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
                 );
               })}
             </ol>
+            {lbRange === 'week' && myRankInfo && !board.some((r) => r.deviceId === deviceId) && (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <div className="flex items-center gap-3 rounded-2xl border border-val-accent/30 bg-val-accent/10 px-4 py-3">
+                  <span className="w-7 shrink-0 text-center text-sm font-black tabular-nums text-slate-400">
+                    {myRankInfo.rank}
+                  </span>
+                  <span className="flex-1 truncate text-sm font-bold text-white">
+                    {name}
+                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-widest text-val-red">
+                      {t.you}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-sm font-black tabular-nums text-val-accent">
+                    {(myRankInfo.score || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </Modal>
       )}
