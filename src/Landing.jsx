@@ -379,49 +379,51 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <img
               src={shareUrl}
               alt={t.shareCardTitle}
-              className={`mx-auto max-h-[52vh] w-auto rounded-2xl border border-white/10 shadow-lg transition-opacity ${sharing ? 'opacity-50' : 'opacity-100'}`}
+              className={`mx-auto max-h-[52vh] w-auto rounded-2xl border border-white/5 shadow-lg transition-opacity ${sharing ? 'opacity-50' : 'opacity-100'}`}
             />
           )}
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
+
+          {/* Template picker — minimal underline tabs */}
+          <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2.5">
             {CARD_TEMPLATES.map((tpl) => (
               <button
                 key={tpl.id}
                 onClick={() => handleSelectTemplate(tpl.id)}
                 disabled={sharing}
-                className={`rounded-full px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
+                className={`border-b-2 pb-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors disabled:opacity-50 ${
                   template === tpl.id
-                    ? 'border border-val-accent bg-val-accent/20 text-val-accent'
-                    : 'border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+                    ? 'border-val-accent text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-300'
                 }`}
               >
                 {tpl.name}
               </button>
             ))}
           </div>
+
+          {/* Show-rank toggle — minimal switch */}
           <button
             onClick={handleToggleRank}
             disabled={sharing || !rank}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-300 transition-all hover:bg-white/10 disabled:opacity-40"
+            className="mt-5 flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400 transition-opacity disabled:opacity-40"
           >
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-md border text-[11px] ${
-                showRank && rank ? 'border-val-accent bg-val-accent/20 text-val-accent' : 'border-white/20 text-transparent'
-              }`}
-            >
-              ✓
+            <span>{t.showRankToggle}{rank ? ` (#${rank})` : ''}</span>
+            <span className={`relative h-5 w-9 rounded-full transition-colors ${showRank && rank ? 'bg-val-accent/80' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${showRank && rank ? 'left-[1.125rem]' : 'left-0.5'}`} />
             </span>
-            {t.showRankToggle}{rank ? ` (#${rank})` : ''}
           </button>
-          <div className="mt-4 flex gap-2">
+
+          {/* Actions — flat, borderless */}
+          <div className="mt-5 flex gap-2">
             <button
               onClick={handleNativeShare}
-              className="flex-1 rounded-2xl border border-val-accent/40 bg-val-accent/10 px-5 py-3 text-sm font-bold uppercase tracking-wider text-val-accent transition-all hover:bg-val-accent/20 active:scale-95"
+              className="flex-1 rounded-xl bg-val-accent/15 px-5 py-3 text-sm font-semibold uppercase tracking-wider text-val-accent transition-colors hover:bg-val-accent/25 active:scale-95"
             >
               {t.shareBtn}
             </button>
             <button
               onClick={handleDownload}
-              className="flex-1 rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 active:scale-95"
+              className="flex-1 rounded-xl bg-white/5 px-5 py-3 text-sm font-semibold uppercase tracking-wider text-slate-300 transition-colors hover:bg-white/10 hover:text-white active:scale-95"
             >
               {t.downloadBtn}
             </button>
