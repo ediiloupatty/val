@@ -20,3 +20,10 @@ CREATE TABLE IF NOT EXISTS scores (
 
 -- Speeds up the "last 7 days, top score" leaderboard query.
 CREATE INDEX IF NOT EXISTS idx_scores_created_at ON scores (created_at);
+
+-- Redeemed session-token nonces, so a signed token can be used to submit a
+-- score exactly once (replay protection). Expired rows are purged opportunistically.
+CREATE TABLE IF NOT EXISTS used_sessions (
+  nonce TEXT PRIMARY KEY,
+  used_at TEXT NOT NULL
+);

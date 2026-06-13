@@ -91,7 +91,7 @@ const VALORANT_YAW_CONSTANT = 0.07;
 // look (which makes panning sideways feel swimmy/heavy).
 const VALORANT_HFOV = 103;
 
-export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setName, best, setBest, onSession, showToast }) {
+export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setName, best, setBest, onSession, onRoundStart, showToast }) {
   const mountRef = useRef(null);
   const rootRef = useRef(null);
   // All mutable engine/game data — lives outside React's render cycle so the
@@ -1039,9 +1039,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     setIsRunning(true);
     engine.current.requestLock(); // button click is a valid user gesture
 
+    // Ask the backend for a fresh signed token for this round (used to authorize
+    // the score submission when the round ends).
+    onRoundStart?.();
+
     // Warm up audio context on the gesture.
     beep(0.0001, 0.01);
-  }, [beep]);
+  }, [beep, onRoundStart]);
 
   const reset = useCallback(() => {
     endGame();

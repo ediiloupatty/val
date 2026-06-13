@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Landing from './Landing.jsx';
 import AimTrainer from './AimTrainer.jsx';
-import { getDeviceId, fetchProfile, saveProfile, submitScore } from './api.js';
+import { getDeviceId, fetchProfile, saveProfile, submitScore, startSession } from './api.js';
 import { TEXT } from './translations.js';
 
 let toastSeq = 0;
@@ -122,10 +122,22 @@ export default function App() {
     });
   };
 
+  // Signed session token, requested when a round starts and redeemed once when
+  // the score is submitted. Kept in a ref so it survives re-renders mid-round.
+  const sessionTokenRef = useRef(null);
+
+  // Each round starts with a fresh token request (the 60s round gives it ample
+  // time to resolve before the score is submitted).
+  const handleRoundStart = useCallback(() => {
+    sessionTokenRef.current = null;
+    startSession(deviceId).then((token) => { sessionTokenRef.current = token; });
+  }, [deviceId]);
+
   // Log a finished session to the weekly leaderboard (best score also synced
   // separately via handleSetBest).
   const handleSession = (session) => {
-    submitScore(deviceId, name, session);
+    submitScore(deviceId, name, session, sessionTokenRef.current);
+    sessionTokenRef.current = null; // single use — force a new token next round
   };
 
   const handleSetLang = (newLang) => {
@@ -166,6 +178,7 @@ export default function App() {
           best={best}
           setBest={handleSetBest}
           onSession={handleSession}
+          onRoundStart={handleRoundStart}
           showToast={showToast}
         />
       )}

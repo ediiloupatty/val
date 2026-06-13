@@ -95,10 +95,34 @@ export async function saveProfile(deviceId, name, best) {
 }
 
 /**
- * Logs one finished session to the scores table (feeds the weekly leaderboard).
- * Fire-and-forget — failures are non-fatal to gameplay.
+ * Requests a signed session token from the backend at game start. The token is
+ * later required by submitScore(), so the leaderboard only accepts scores from a
+ * session this backend authorized. Returns the token string or null on failure.
  */
-export async function submitScore(deviceId, name, session) {
+export async function startSession(deviceId) {
+  if (!deviceId) return null;
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/api/session/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.success ? json.token : null;
+    }
+  } catch (err) {
+    console.warn('[API] Could not start session:', err.message);
+  }
+  return null;
+}
+
+/**
+ * Logs one finished session to the scores table (feeds the weekly leaderboard).
+ * Requires the signed token from startSession(). Fire-and-forget — failures are
+ * non-fatal to gameplay.
+ */
+export async function submitScore(deviceId, name, session, token) {
   if (!deviceId || !session) return;
   try {
     await fetchWithTimeout(`${API_URL}/api/score`, {
@@ -110,6 +134,7 @@ export async function submitScore(deviceId, name, session) {
         score: session.score,
         accuracy: session.accuracy,
         split: session.split,
+        token,
       }),
     });
   } catch (err) {
