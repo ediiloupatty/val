@@ -241,9 +241,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    // Calm, soft studio palette — airy and low-contrast so it feels relaxed.
-    scene.background = new THREE.Color(0x3e4d57);
-    scene.fog = new THREE.Fog(0x3e4d57, 16, 46);
+    // Dark range palette — high contrast against glowing targets.
+    scene.background = new THREE.Color(0x16212b);
+    scene.fog = new THREE.FogExp2(0x16212b, 0.04);
 
     const camera = new THREE.PerspectiveCamera(
       71, // vertical FOV placeholder — recomputed by setFov() from VALORANT_HFOV
@@ -279,9 +279,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     canvas.style.display = 'block';
     canvas.style.cursor = 'crosshair';
 
-    // --- Minimal environment: soft floor + back/side walls --------------------
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x5a6670, roughness: 1 });
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a565f, roughness: 1 });
+    // --- Minimal environment: dark floor + back/side walls --------------------
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1d2b36, roughness: 1 });
+    const wallMat  = new THREE.MeshStandardMaterial({ color: 0x1a2630, roughness: 1 });
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -302,16 +302,15 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     rightWall.position.set(15, 10, 0);
     scene.add(rightWall);
 
-    // Grid on floor for spatial reference (subtle, low-contrast lines).
-    const grid = new THREE.GridHelper(60, 60, 0x6b7782, 0x6b7782);
+    // Sparse grid on floor — 20 divisions keeps spatial context without clutter.
+    const grid = new THREE.GridHelper(60, 20, 0x253545, 0x1e2c3a);
     grid.position.y = -1.59;
     scene.add(grid);
 
-    // --- Lighting (cheap) — soft, warm and even for a relaxed mood ------------
-    scene.add(new THREE.AmbientLight(0xfff4e6, 0.9));
-    // Natural sky/ground fill keeps shadows gentle instead of harsh.
-    scene.add(new THREE.HemisphereLight(0xa9c6da, 0x6a5d4f, 0.6));
-    const dir = new THREE.DirectionalLight(0xffe9d0, 0.5);
+    // --- Lighting — cooler and dimmer so emissive targets glow by contrast ----
+    scene.add(new THREE.AmbientLight(0x8ab0cc, 0.6));
+    scene.add(new THREE.HemisphereLight(0x6090b0, 0x1a2030, 0.5));
+    const dir = new THREE.DirectionalLight(0xc0d8e8, 0.4);
     dir.position.set(5, 12, 8);
     scene.add(dir);
 
@@ -400,6 +399,36 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     let vigType = 'fire'; // 'fire' | 'hit'
     const dyingTargets = [];
 
+    // --- Hit flash point light (reused across hits) ---------------------------
+    const hitLight = new THREE.PointLight(0xffffff, 0, 7);
+    scene.add(hitLight);
+    let hitLightTimer = 0;
+
+    // --- Hit particle burst ---------------------------------------------------
+    const particleGeo = new THREE.BoxGeometry(0.042, 0.042, 0.042);
+    const hitParticles = []; // { mesh, vx, vy, vz, age, maxAge }
+
+    function spawnHitParticles(pos, hexColor) {
+      const count = 6;
+      for (let i = 0; i < count; i++) {
+        const mat = new THREE.MeshBasicMaterial({ color: hexColor, transparent: true, opacity: 1 });
+        const mesh = new THREE.Mesh(particleGeo, mat);
+        mesh.position.copy(pos);
+        // Scatter radially in XY — bias slightly upward, minimal Z drift.
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.8;
+        const speed = 3.5 + Math.random() * 4.5;
+        hitParticles.push({
+          mesh,
+          vx: Math.cos(angle) * speed,
+          vy: Math.abs(Math.sin(angle)) * speed * 0.6 + 1.5,
+          vz: (Math.random() - 0.5) * 1.5,
+          age: 0,
+          maxAge: 0.18 + Math.random() * 0.08,
+        });
+        scene.add(mesh);
+      }
+    }
+
     function fireViewmodel() {
       // Viewmodel kick
       vmRecoilZ    = 0.14;
@@ -453,9 +482,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       const mat = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
-        emissiveIntensity: 0.5,
-        roughness: 0.25,
-        metalness: 0.1,
+        emissiveIntensity: 0.7,
+        roughness: 0.2,
+        metalness: 0.05,
       });
       const m = new THREE.Mesh(geo, mat);
       m.userData.radius = r;
@@ -489,6 +518,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       }
       m.position.set(best.x, best.y, TARGET_DISTANCE);
       m.userData.spawnTime = performance.now();
+      m.userData.spawnAge  = 0; // drives the pop-in animation in animate()
+      m.scale.setScalar(0);    // start invisible — animate() scales to 1
       scene.add(m);
       targets.push(m);
     }
@@ -611,7 +642,17 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         // Destroy & respawn nearby.
         const idx = targets.indexOf(hitMesh);
         if (idx !== -1) targets.splice(idx, 1);
-        
+
+        // Hit particle burst — scatter from target center.
+        const hitColor = hitMesh.material.color.getHex();
+        spawnHitParticles(hitMesh.position, hitColor);
+
+        // Hit flash — brief point light at impact position.
+        hitLight.color.setHex(hitColor);
+        hitLight.position.copy(hitMesh.position);
+        hitLight.intensity = 4;
+        hitLightTimer = 0.12;
+
         hitMesh.userData.dying = true;
         dyingTargets.push({ mesh: hitMesh, age: 0 });
         respawn();
@@ -726,6 +767,16 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
         fpsAccum = 0;
       }
 
+      // --- Spawn pop animation (scale 0→1 ease-out cubic, 70ms) ---
+      for (const tgt of targets) {
+        if (tgt.userData.spawnAge === undefined) continue;
+        tgt.userData.spawnAge += dt;
+        const p = Math.min(tgt.userData.spawnAge / 0.07, 1);
+        const s = 1 - Math.pow(1 - p, 3); // ease-out cubic
+        tgt.scale.setScalar(s);
+        if (p >= 1) delete tgt.userData.spawnAge;
+      }
+
       // --- Dying target pop animation ---
       for (let i = dyingTargets.length - 1; i >= 0; i--) {
         const dtg = dyingTargets[i];
@@ -739,6 +790,32 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           const s = Math.max(0, 1 - Math.pow(dtg.age / 0.15, 3));
           dtg.mesh.scale.set(s, s, s);
         }
+      }
+
+      // --- Hit particle burst update ---
+      for (let i = hitParticles.length - 1; i >= 0; i--) {
+        const p = hitParticles[i];
+        p.age += dt;
+        if (p.age >= p.maxAge) {
+          scene.remove(p.mesh);
+          p.mesh.material.dispose();
+          hitParticles.splice(i, 1);
+        } else {
+          const frac = p.age / p.maxAge;
+          p.mesh.position.x += p.vx * dt;
+          p.mesh.position.y += p.vy * dt - 12 * p.age * dt; // gravity pull
+          p.mesh.position.z += p.vz * dt;
+          p.mesh.material.opacity = 1 - frac * frac;
+          const s = 1 - frac * 0.6;
+          p.mesh.scale.setScalar(s);
+        }
+      }
+
+      // --- Hit flash light fade ---
+      if (hitLightTimer > 0) {
+        hitLightTimer -= dt;
+        hitLight.intensity = Math.max(0, (hitLightTimer / 0.12) * 4);
+        if (hitLightTimer <= 0) hitLight.intensity = 0;
       }
 
       // --- Camera recoil recovery (slower spring = weightier feel) ---
@@ -839,6 +916,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       // Bulk-dispose all cached geometries now that the engine is fully torn down.
       geoCache.forEach((geo) => geo.dispose());
       geoCache.clear();
+      // Dispose any in-flight hit particles.
+      for (const p of hitParticles) { scene.remove(p.mesh); p.mesh.material.dispose(); }
+      hitParticles.length = 0;
+      particleGeo.dispose();
       renderer.dispose();
       if (canvas.parentNode === mount) mount.removeChild(canvas);
       engine.current = null;
