@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
 import { fetchLeaderboard } from './api.js';
+import { generateShareCard } from './shareCard.js';
 
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
@@ -18,6 +19,11 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [tempName, setTempName] = useState(name);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
+  // Share-card state: the generated PNG (as an object URL for preview) + its Blob
+  // (for the Web Share API), and a flag while the canvas is rendering.
+  const [shareUrl, setShareUrl] = useState(null);
+  const [shareBlob, setShareBlob] = useState(null);
+  const [sharing, setSharing] = useState(false);
   const t = TEXT[lang] || TEXT.en;
 
   // ---------- 3D parallax refs (no React state — driven by rAF) ----------
@@ -108,6 +114,65 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     const trimmed = tempName.trim();
     if (trimmed && trimmed !== name) setName(trimmed);
   };
+
+  // Render the score card and open the share panel with a live preview.
+  const handleOpenShare = async () => {
+    try {
+      setSharing(true);
+      const blob = await generateShareCard({
+        name,
+        score: best.score,
+        accuracy: best.accuracy,
+        split: best.split,
+        text: t,
+      });
+      const url = URL.createObjectURL(blob);
+      setShareBlob(blob);
+      setShareUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+      setPanel('share');
+    } catch {
+      showToast?.(t.shareError, 'error');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Native share sheet (mobile / supported browsers); falls back to download.
+  const handleNativeShare = async () => {
+    if (!shareBlob) return;
+    const file = new File([shareBlob], 'aimku-score.png', { type: 'image/png' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: t.shareCardTitle,
+          text: t.shareText.replace('{score}', best.score),
+          files: [file],
+        });
+      } else {
+        handleDownload();
+      }
+    } catch (err) {
+      // User cancelling the share sheet throws AbortError — not an error to surface.
+      if (err?.name !== 'AbortError') showToast?.(t.shareError, 'error');
+    }
+  };
+
+  const handleDownload = () => {
+    if (!shareUrl) return;
+    const a = document.createElement('a');
+    a.href = shareUrl;
+    a.download = 'aimku-score.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast?.(t.shareDownloaded, 'success');
+  };
+
+  // Release the preview object URL when the component unmounts.
+  useEffect(() => () => { if (shareUrl) URL.revokeObjectURL(shareUrl); }, [shareUrl]);
 
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none">
@@ -253,9 +318,44 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               <Stat label={t.bestSplit} value={`${best.split ? Math.round(best.split) : 0}ms`} />
             </div>
           )}
+          {!profileLoading && best.score > 0 && (
+            <button
+              onClick={handleOpenShare}
+              disabled={sharing}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-val-accent/40 bg-val-accent/10 px-5 py-3 text-sm font-bold uppercase tracking-wider text-val-accent transition-all hover:scale-[1.02] hover:bg-val-accent/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+            >
+              {sharing ? t.shareGenerating : `📤 ${t.share}`}
+            </button>
+          )}
           <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
             {t.profileTip}
           </p>
+        </Modal>
+      )}
+
+      {panel === 'share' && (
+        <Modal title={t.shareCardTitle} onClose={() => setPanel('profile')}>
+          {shareUrl && (
+            <img
+              src={shareUrl}
+              alt={t.shareCardTitle}
+              className="w-full rounded-2xl border border-white/10 shadow-lg"
+            />
+          )}
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={handleNativeShare}
+              className="flex-1 rounded-2xl border border-val-accent/40 bg-val-accent/10 px-5 py-3 text-sm font-bold uppercase tracking-wider text-val-accent transition-all hover:bg-val-accent/20 active:scale-95"
+            >
+              {t.shareBtn}
+            </button>
+            <button
+              onClick={handleDownload}
+              className="flex-1 rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 active:scale-95"
+            >
+              {t.downloadBtn}
+            </button>
+          </div>
         </Modal>
       )}
 
