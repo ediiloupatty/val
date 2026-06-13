@@ -8,7 +8,7 @@ const BG_URL = '/img/jett-background.webp';
 // Contact / support destinations — edit to your own links.
 const CONTACT = {
   email: 'muhammadlikmansyah143@gmail.com',
-  donate: 'https://saweria.co/', // ← replace with your Saweria/Trakteer/Ko-fi
+  donate: 'https://saweria.co/ediloupatty',
   github: 'https://github.com/ediiloupatty', // ← your profile
 };
 
