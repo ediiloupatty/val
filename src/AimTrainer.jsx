@@ -503,13 +503,19 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       m.userData.radius = r;       // used by spawn-overlap math below
       hitRadii.set(m, r);          // authoritative radius for hit detection (tamper-proof)
 
-      // The spawn area scales with target size so bigger balls actually spread
-      // out instead of staying crammed into the same fixed disc (the spread is
-      // tuned for the default 0.28 size). Clamped so even max-size targets stay
-      // within the ~±10 (x) / ~±5.6 (y) visible region at the target plane.
+      // The spawn area scales with target size so bigger balls spread out in
+      // proportion instead of bunching together — the relative gap between
+      // targets (and thus the aiming difficulty) stays the same as at the
+      // default 0.28 size, so enlarging targets is no longer an easy-mode
+      // exploit. The cluster only stops growing when it would push a target off
+      // screen, so the cap adapts to the ball radius (a bigger ball needs a
+      // little more margin) rather than being a fixed value that breaks the
+      // proportional scaling at large sizes.
+      const VIS_HALF_X = 9.8; // ~half the visible width at the target plane (103° HFOV)
+      const VIS_HALF_Y = 5.4; // ~half the visible height
       const sizeRatio = cfgRef.current.targetSize / 0.28;
-      const spreadX = Math.min(mode.spreadX * sizeRatio, 8.5);
-      const spreadY = Math.min(mode.spreadY * sizeRatio, 4.5);
+      const spreadX = Math.min(mode.spreadX * sizeRatio, Math.max(mode.spreadX, VIS_HALF_X - r));
+      const spreadY = Math.min(mode.spreadY * sizeRatio, Math.max(mode.spreadY, VIS_HALF_Y - r));
 
       // Disc distribution within the (size-scaled) spread. Reject positions that
       // overlap existing targets (2D check — all share the same Z plane).
