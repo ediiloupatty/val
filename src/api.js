@@ -144,6 +144,24 @@ export async function submitScore(deviceId, name, session, token) {
 }
 
 /**
+ * Fetches the player's weekly leaderboard rank (1-based) for the share card.
+ * Returns the rank number, or null if unranked / on failure.
+ */
+export async function fetchRank(deviceId) {
+  if (!deviceId) return null;
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/api/rank?deviceId=${deviceId}`);
+    if (res.ok) {
+      const json = await res.json();
+      return json.success ? json.rank : null;
+    }
+  } catch (err) {
+    console.warn('[API] Could not fetch rank:', err.message);
+  }
+  return null;
+}
+
+/**
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */

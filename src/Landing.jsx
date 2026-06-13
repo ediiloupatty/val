@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
-import { fetchLeaderboard } from './api.js';
+import { fetchLeaderboard, fetchRank } from './api.js';
 import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 
 // Landing background (converted from PNG → WebP for a much smaller file).
@@ -25,6 +25,8 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [shareBlob, setShareBlob] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [template, setTemplate] = useState('neon');
+  const [showRank, setShowRank] = useState(true);
+  const [rank, setRank] = useState(null);
   const t = TEXT[lang] || TEXT.en;
 
   // ---------- 3D parallax refs (no React state — driven by rAF) ----------
@@ -116,8 +118,8 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     if (trimmed && trimmed !== name) setName(trimmed);
   };
 
-  // Render the score card for a given template into the preview state.
-  const renderCard = async (tpl) => {
+  // Render the score card for a given template + rank into the preview state.
+  const renderCard = async (tpl, rankVal) => {
     const blob = await generateShareCard({
       name,
       score: best.score,
@@ -125,6 +127,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
       split: best.split,
       text: t,
       template: tpl,
+      rank: rankVal,
     });
     const url = URL.createObjectURL(blob);
     setShareBlob(blob);
@@ -134,11 +137,13 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     });
   };
 
-  // Open the share panel with a live preview of the current template.
+  // Open the share panel: fetch the weekly rank, then preview the current template.
   const handleOpenShare = async () => {
     try {
       setSharing(true);
-      await renderCard(template);
+      const r = deviceId ? await fetchRank(deviceId) : null;
+      setRank(r);
+      await renderCard(template, showRank ? r : null);
       setPanel('share');
     } catch {
       showToast?.(t.shareError, 'error');
@@ -153,7 +158,21 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     setTemplate(tpl);
     try {
       setSharing(true);
-      await renderCard(tpl);
+      await renderCard(tpl, showRank ? rank : null);
+    } catch {
+      showToast?.(t.shareError, 'error');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Toggle the rank badge on the card and re-render.
+  const handleToggleRank = async () => {
+    const next = !showRank;
+    setShowRank(next);
+    try {
+      setSharing(true);
+      await renderCard(template, next ? rank : null);
     } catch {
       showToast?.(t.shareError, 'error');
     } finally {
@@ -379,6 +398,20 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               </button>
             ))}
           </div>
+          <button
+            onClick={handleToggleRank}
+            disabled={sharing || !rank}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-300 transition-all hover:bg-white/10 disabled:opacity-40"
+          >
+            <span
+              className={`flex h-5 w-5 items-center justify-center rounded-md border text-[11px] ${
+                showRank && rank ? 'border-val-accent bg-val-accent/20 text-val-accent' : 'border-white/20 text-transparent'
+              }`}
+            >
+              ✓
+            </span>
+            {t.showRankToggle}{rank ? ` (#${rank})` : ''}
+          </button>
           <div className="mt-4 flex gap-2">
             <button
               onClick={handleNativeShare}

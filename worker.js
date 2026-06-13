@@ -542,6 +542,40 @@ export default {
       }
     }
 
+    // GET /api/rank?deviceId=... — the device's 1-based rank on the weekly
+    // leaderboard (by best score in the last 7 days). null if it has no scores
+    // this week. Used by the shareable score card.
+    if (path === "/api/rank" && request.method === "GET") {
+      const deviceId = url.searchParams.get("deviceId");
+      if (!isValidDeviceId(deviceId)) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Invalid deviceId format" }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      try {
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { results } = await env.DB.prepare(`
+          WITH best AS (
+            SELECT device_id, MAX(score) AS s
+            FROM scores WHERE created_at >= ? GROUP BY device_id
+          )
+          SELECT (SELECT COUNT(*) FROM best b2 WHERE b2.s > b1.s) + 1 AS rank
+          FROM best b1 WHERE b1.device_id = ?
+        `).bind(weekAgo, deviceId).all();
+        const rank = results && results.length ? Number(results[0].rank) : null;
+        return new Response(
+          JSON.stringify({ success: true, rank }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Database error fetching rank: " + err.message }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
     // GET /api/leaderboard — top 10 scores achieved in the last 7 days.
     // SQLite "bare column" rule: with a single MAX(), the name/accuracy/split
     // columns are taken from the same row as that max score (one per device).
