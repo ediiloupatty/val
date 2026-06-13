@@ -157,6 +157,17 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           </div>
         </div>
         <div className="text-right">
+          {profileLoading ? (
+            <div className="mb-1 ml-auto h-3 w-20 animate-pulse rounded bg-white/10" />
+          ) : (
+            <p
+              className={`text-sm md:text-base font-black tracking-wide truncate max-w-[140px] ${
+                name === 'Agent' ? 'text-slate-500' : 'text-white'
+              }`}
+            >
+              {name}
+            </p>
+          )}
           <p className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-slate-400">{t.bestScoreLabel}</p>
           <p className="text-lg md:text-xl font-black tabular-nums text-val-accent">{best.score}</p>
         </div>
