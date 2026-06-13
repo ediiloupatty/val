@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
 import { fetchLeaderboard } from './api.js';
-import { generateShareCard } from './shareCard.js';
+import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
@@ -24,6 +24,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [shareUrl, setShareUrl] = useState(null);
   const [shareBlob, setShareBlob] = useState(null);
   const [sharing, setSharing] = useState(false);
+  const [template, setTemplate] = useState('neon');
   const t = TEXT[lang] || TEXT.en;
 
   // ---------- 3D parallax refs (no React state — driven by rAF) ----------
@@ -115,24 +116,44 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     if (trimmed && trimmed !== name) setName(trimmed);
   };
 
-  // Render the score card and open the share panel with a live preview.
+  // Render the score card for a given template into the preview state.
+  const renderCard = async (tpl) => {
+    const blob = await generateShareCard({
+      name,
+      score: best.score,
+      accuracy: best.accuracy,
+      split: best.split,
+      text: t,
+      template: tpl,
+    });
+    const url = URL.createObjectURL(blob);
+    setShareBlob(blob);
+    setShareUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+  };
+
+  // Open the share panel with a live preview of the current template.
   const handleOpenShare = async () => {
     try {
       setSharing(true);
-      const blob = await generateShareCard({
-        name,
-        score: best.score,
-        accuracy: best.accuracy,
-        split: best.split,
-        text: t,
-      });
-      const url = URL.createObjectURL(blob);
-      setShareBlob(blob);
-      setShareUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return url;
-      });
+      await renderCard(template);
       setPanel('share');
+    } catch {
+      showToast?.(t.shareError, 'error');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Switch template and re-render the preview.
+  const handleSelectTemplate = async (tpl) => {
+    if (tpl === template) return;
+    setTemplate(tpl);
+    try {
+      setSharing(true);
+      await renderCard(tpl);
     } catch {
       showToast?.(t.shareError, 'error');
     } finally {
@@ -339,9 +360,25 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <img
               src={shareUrl}
               alt={t.shareCardTitle}
-              className="mx-auto max-h-[58vh] w-auto rounded-2xl border border-white/10 shadow-lg"
+              className={`mx-auto max-h-[52vh] w-auto rounded-2xl border border-white/10 shadow-lg transition-opacity ${sharing ? 'opacity-50' : 'opacity-100'}`}
             />
           )}
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {CARD_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => handleSelectTemplate(tpl.id)}
+                disabled={sharing}
+                className={`rounded-full px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
+                  template === tpl.id
+                    ? 'border border-val-accent bg-val-accent/20 text-val-accent'
+                    : 'border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {tpl.name}
+              </button>
+            ))}
+          </div>
           <div className="mt-4 flex gap-2">
             <button
               onClick={handleNativeShare}
