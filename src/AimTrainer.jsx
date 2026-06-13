@@ -91,7 +91,7 @@ const VALORANT_YAW_CONSTANT = 0.07;
 // look (which makes panning sideways feel swimmy/heavy).
 const VALORANT_HFOV = 103;
 
-export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setBest, onSession }) {
+export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setBest, onSession, showToast }) {
   const mountRef = useRef(null);
   const rootRef = useRef(null);
   // All mutable engine/game data — lives outside React's render cycle so the
@@ -132,16 +132,19 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     cfgRef.current = { sensitivity, targetSize, mode };
   }, [sensitivity, targetSize, mode]);
 
-  // Persist settings whenever any of them change.
+  // Persist settings — debounced 400ms so rapid slider drags don't spam localStorage.
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        'vat_settings',
-        JSON.stringify({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang })
-      );
-    } catch {
-      /* private mode / quota — settings just won't persist */
-    }
+    const id = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          'vat_settings',
+          JSON.stringify({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang })
+        );
+      } catch {
+        /* private mode / quota — settings just won't persist */
+      }
+    }, 400);
+    return () => clearTimeout(id);
   }, [sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang]);
 
   // --- Session stats (UI state) ---
@@ -185,13 +188,38 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   // Cancel all pending popup timers on unmount (prevents state updates after unmount).
   useEffect(() => () => { popupTimeouts.current.forEach(clearTimeout); }, []);
 
+  // Session backup — written to localStorage while a session is running so a browser
+  // crash or accidental close doesn't silently discard the user's score.
+  // Debounced 1s to avoid writing on every single shot.
+  useEffect(() => {
+    if (!isRunning || score === 0) return;
+    const id = setTimeout(() => {
+      try {
+        localStorage.setItem('vat_session_backup', JSON.stringify({ score, hits, misses, modeKey, ts: Date.now() }));
+      } catch { /* ignore */ }
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [score, hits, misses, isRunning, modeKey]);
+
   /* --------------------------- Audio (procedural) --------------------------- */
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem('vat_muted') === '1'; } catch { return false; }
+  });
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+    mutedRef.current = muted;
+    try { localStorage.setItem('vat_muted', muted ? '1' : '0'); } catch { /* ignore */ }
+  }, [muted]);
+
   const audioRef = useRef(null);
   const beep = useCallback((freq, duration, type = 'sine', gain = 0.15) => {
+    if (mutedRef.current) return;
     let ctx = audioRef.current;
     if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      audioRef.current = ctx;
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        audioRef.current = ctx;
+      } catch { return; }
     }
     if (ctx.state === 'suspended') ctx.resume();
     const osc = ctx.createOscillator();
@@ -345,7 +373,17 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
       },
       undefined,
       () => {
-        console.info('[AimTrainer] Could not load %s', MODEL_URL);
+        console.info('[AimTrainer] Could not load %s — using fallback geometry', MODEL_URL);
+        showToast?.(t.modelLoadError, 'info');
+        // Minimal box-based viewmodel so something appears in-hand.
+        const mat = new THREE.MeshStandardMaterial({ color: 0x2a3540, roughness: 0.85, metalness: 0.3 });
+        const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.038, 0.36), mat);
+        barrel.position.set(0, 0.01, -0.16);
+        const slide = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.055, 0.28), mat);
+        slide.position.set(0, 0.035, -0.14);
+        const grip = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.13, 0.048), mat);
+        grip.position.set(0, -0.06, 0.02);
+        weapon.add(barrel, slide, grip);
       }
     );
 
@@ -874,6 +912,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     setIsMoving(false);
     if (document.pointerLockElement) document.exitPointerLock();
     engine.current?.clearTargets();
+    try { localStorage.removeItem('vat_session_backup'); } catch { /* ignore */ }
   }, []);
 
   const startPractice = useCallback(() => {
@@ -913,6 +952,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
     setTimeLeft(SESSION_SECONDS);
     setHasPlayed(false);
     engine.current?.resetView();
+    try { localStorage.removeItem('vat_session_backup'); } catch { /* ignore */ }
   }, [endGame]);
 
   // Apply a mode and restart the round fresh. Pushes the new mode into the
@@ -990,11 +1030,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
   // --- Fullscreen: hides the sidebar, leaving a minimal HUD over the arena ---
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      rootRef.current?.requestFullscreen?.();
+      rootRef.current?.requestFullscreen?.()?.catch(() => {
+        showToast?.(t.fullscreenError, 'error');
+      });
     } else {
-      document.exitFullscreen?.();
+      document.exitFullscreen?.()?.catch(() => {});
     }
-  }, []);
+  }, [showToast, t.fullscreenError]);
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
@@ -1046,7 +1088,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           </div>
           {onExit && (
             <button
-              onClick={onExit}
+              onClick={() => {
+                try { localStorage.removeItem('vat_session_backup'); } catch { /* ignore */ }
+                onExit();
+              }}
               title="Menu"
               className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-sm transition-all hover:bg-white/20"
             >
@@ -1093,6 +1138,16 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
             </div>
           )}
         </div>
+
+        {/* Counter-Strafe mechanic tip — only shown in strafe mode */}
+        {modeKey === 'strafe' && (
+          <div className="rounded-2xl border border-[#ff4655]/20 bg-[#ff4655]/5 px-4 py-3">
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              <span className="font-bold text-[#ff4655]">Counter-Strafe · </span>
+              {t.strafeTip}
+            </p>
+          </div>
+        )}
 
         {/* Timer */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
@@ -1219,7 +1274,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           />
         )}
 
-        {/* Top-right controls: FPS meter + fullscreen toggle */}
+        {/* Top-right controls: FPS meter + mute + fullscreen toggle */}
         <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
           <div
             className={`rounded-full bg-black/40 border border-white/10 px-3 py-1.5 text-xs font-bold tabular-nums shadow-sm ${
@@ -1232,6 +1287,14 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, best, setB
           >
             {fps} FPS
           </div>
+          <button
+            onClick={() => setMuted((m) => !m)}
+            title={muted ? t.unmute : t.mute}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm leading-none shadow-sm transition-all hover:scale-105 hover:bg-black/60 active:scale-95"
+            style={{ color: muted ? '#ff4655' : '#94a3b8' }}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
           <button
             onClick={toggleFullscreen}
             title={isFullscreen ? t.fsExit : t.fsEnter}

@@ -62,6 +62,12 @@ input[type='range']::-moz-range-thumb {
 .animate-hitmarker { animation: hitmarker 0.25s ease-out forwards; }
 .animate-floatup   { animation: floatup  0.65s ease-out forwards; }
 
+@keyframes toast-in {
+  0%   { transform: translateX(110%); opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+.animate-toast { animation: toast-in 0.2s ease-out forwards; }
+
 /* --- Wind streaks (Jett-style) --- */
 @keyframes wind-streak {
   0%   { transform: translateX(65vw) scaleX(0.5); opacity: 0; }

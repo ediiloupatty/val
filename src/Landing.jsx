@@ -12,11 +12,12 @@ const CONTACT = {
   github: 'https://github.com/ediiloupatty', // ← your profile
 };
 
-export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best, deviceId }) {
+export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best, deviceId, profileLoading, showToast }) {
   const [panel, setPanel] = useState(null);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
   const [board, setBoard] = useState(null);
+  const [boardError, setBoardError] = useState(false);
   const t = TEXT[lang] || TEXT.en;
 
   // ---------- 3D parallax refs (no React state — driven by rAF) ----------
@@ -66,13 +67,42 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
   useEffect(() => { setTempName(name); }, [name]);
 
-  useEffect(() => {
-    if (panel !== 'leaderboard') return;
+  const loadLeaderboard = () => {
     let alive = true;
     setBoard(null);
-    fetchLeaderboard().then((rows) => { if (alive) setBoard(rows || []); });
+    setBoardError(false);
+    fetchLeaderboard().then(({ rows, error }) => {
+      if (!alive) return;
+      if (error) {
+        setBoardError(true);
+        setBoard([]);
+      } else {
+        setBoard(rows || []);
+      }
+    });
     return () => { alive = false; };
+  };
+
+  useEffect(() => {
+    if (panel !== 'leaderboard') return;
+    return loadLeaderboard();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panel]);
+
+  // Check for a session backup left by a browser crash / unexpected close.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('vat_session_backup');
+      if (!raw) return;
+      const backup = JSON.parse(raw);
+      const age = Date.now() - backup.ts;
+      if (backup.score > 0 && age < 30 * 60 * 1000) {
+        showToast?.(t.sessionBackupMsg.replace('{score}', backup.score.toLocaleString()), 'info');
+      }
+      localStorage.removeItem('vat_session_backup');
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = () => {
     const trimmed = tempName.trim();
@@ -163,9 +193,14 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
       {panel === 'profile' && (
         <Modal title={t.profile} onClose={() => setPanel(null)}>
           <label className="mb-4 block">
-            <span className="mb-1 block text-[10px] uppercase tracking-widest text-slate-400">
-              {t.displayName}
-            </span>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-slate-400">
+                {t.displayName}
+              </span>
+              <span className={`text-[10px] tabular-nums ${tempName.length >= 18 ? 'text-val-red' : 'text-slate-500'}`}>
+                {tempName.length}/20
+              </span>
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 value={tempName}
@@ -191,11 +226,22 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               </button>
             </div>
           </label>
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label={t.bestScore} value={best.score} accent />
-            <Stat label={t.bestAcc} value={`${best.accuracy ? best.accuracy.toFixed(0) : 0}%`} />
-            <Stat label={t.bestSplit} value={`${best.split ? Math.round(best.split) : 0}ms`} />
-          </div>
+          {profileLoading ? (
+            <div className="grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
+                  <p className="text-[9px] uppercase tracking-widest text-slate-600">&nbsp;</p>
+                  <div className="mx-auto mt-1 h-5 w-10 animate-pulse rounded bg-white/10" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              <Stat label={t.bestScore} value={best.score} accent />
+              <Stat label={t.bestAcc} value={`${best.accuracy ? best.accuracy.toFixed(0) : 0}%`} />
+              <Stat label={t.bestSplit} value={`${best.split ? Math.round(best.split) : 0}ms`} />
+            </div>
+          )}
           <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
             {t.profileTip}
           </p>
@@ -221,11 +267,32 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
       {panel === 'leaderboard' && (
         <Modal title={t.leaderboard} onClose={() => setPanel(null)}>
-          <p className="-mt-2 mb-4 text-[11px] uppercase tracking-widest text-slate-400">
-            {t.leaderboardSub}
-          </p>
+          <div className="-mt-2 mb-4 flex items-center justify-between">
+            <p className="text-[11px] uppercase tracking-widest text-slate-400">
+              {t.leaderboardSub}
+            </p>
+            <button
+              onClick={loadLeaderboard}
+              disabled={board === null}
+              className="text-[10px] uppercase tracking-widest text-val-accent hover:opacity-80 disabled:opacity-30 transition-opacity"
+            >
+              ↻ {t.leaderboardRetry}
+            </button>
+          </div>
           {board === null ? (
-            <p className="py-8 text-center text-sm text-slate-400">{t.leaderboardLoading}</p>
+            <div className="flex items-center justify-center py-8">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-[#00e5c0]" />
+            </div>
+          ) : boardError ? (
+            <div className="py-6 text-center">
+              <p className="mb-3 text-sm text-slate-400">{t.leaderboardError}</p>
+              <button
+                onClick={loadLeaderboard}
+                className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15"
+              >
+                {t.leaderboardRetry}
+              </button>
+            </div>
           ) : board.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">{t.leaderboardEmpty}</p>
           ) : (
@@ -362,27 +429,62 @@ function MenuItem({ label, onClick }) {
 }
 
 function Modal({ title, children, onClose }) {
+  const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { onCloseRef.current(); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...dialog.querySelectorAll(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
       <div
-        className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-        onClick={onClose}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabIndex={-1}
+        className="no-scrollbar w-full max-w-md max-h-[80dvh] overflow-y-auto rounded-[2rem] border border-white/10 bg-[#141d24] p-7 shadow-2xl focus:outline-none"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="no-scrollbar w-full max-w-md max-h-[80dvh] overflow-y-auto rounded-[2rem] border border-white/10 bg-[#141d24] p-7 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-black uppercase tracking-widest text-val-red">{title}</h2>
-            <button
-              onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white text-sm"
-            >
-              ✕
-            </button>
-          </div>
-          {children}
+        <div className="mb-4 flex items-center justify-between">
+          <h2 id="modal-title" className="text-xl font-black uppercase tracking-widest text-val-red">{title}</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white text-sm"
+          >
+            ✕
+          </button>
         </div>
+        {children}
       </div>
+    </div>
   );
 }
 

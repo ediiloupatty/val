@@ -74,7 +74,7 @@ export async function fetchProfile(deviceId) {
  * Cloudflare D1 database (upsert by deviceId).
  */
 export async function saveProfile(deviceId, name, best) {
-  if (!deviceId) return;
+  if (!deviceId) return { ok: false };
   try {
     const res = await fetchWithTimeout(`${API_URL}/api/profile`, {
       method: 'POST',
@@ -85,9 +85,12 @@ export async function saveProfile(deviceId, name, best) {
     });
     if (!res.ok) {
       console.warn('[API] Worker responded with status:', res.status);
+      return { ok: false };
     }
+    return { ok: true };
   } catch (err) {
     console.warn('[API] Could not sync profile to Cloudflare D1:', err.message);
+    return { ok: false };
   }
 }
 
@@ -123,10 +126,11 @@ export async function fetchLeaderboard() {
     const res = await fetchWithTimeout(`${API_URL}/api/leaderboard`);
     if (res.ok) {
       const json = await res.json();
-      return json.success ? json.data : null;
+      return { rows: json.success ? json.data : [], error: false };
     }
+    return { rows: null, error: true };
   } catch (err) {
     console.warn('[API] Could not fetch leaderboard:', err.message);
+    return { rows: null, error: true };
   }
-  return null;
 }
