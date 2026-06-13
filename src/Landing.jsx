@@ -339,7 +339,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <img
               src={shareUrl}
               alt={t.shareCardTitle}
-              className="w-full rounded-2xl border border-white/10 shadow-lg"
+              className="mx-auto max-h-[58vh] w-auto rounded-2xl border border-white/10 shadow-lg"
             />
           )}
           <div className="mt-4 flex gap-2">
