@@ -130,7 +130,7 @@ export default function App() {
   // the score is submitted. Kept in a ref so it survives re-renders mid-round.
   const sessionTokenRef = useRef(null);
 
-  // Each round starts with a fresh token request (the 60s round gives it ample
+  // Each round starts with a fresh token request (the 40s round gives it ample
   // time to resolve before the score is submitted).
   const handleRoundStart = useCallback(() => {
     sessionTokenRef.current = null;

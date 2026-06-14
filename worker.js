@@ -29,14 +29,14 @@ function isValidDeviceId(id) {
 }
 
 // --- Server-side validation bounds -----------------------------------------
-// A session is a fixed 60 s round (see SESSION_SECONDS in the client). Each hit
+// A session is a fixed 40 s round (see SESSION_SECONDS in the client). Each hit
 // awards at most ~300 points, so even a flawless run lands far below MAX_SCORE.
 // These ceilings reject obviously forged payloads (e.g. score: 999999999) while
 // staying generous enough never to reject a legitimate elite run.
 const MAX_NAME_LEN = 20;
-const MAX_SCORE = 100000;   // generous ceiling; a real 60 s session caps well below this
+const MAX_SCORE = 100000;   // generous ceiling; a real 40 s session caps well below this
 const MAX_ACCURACY = 100;   // accuracy is a percentage
-const MAX_SPLIT_MS = 60000; // a split/reaction can't exceed the 60 s session length
+const MAX_SPLIT_MS = 60000; // generous ceiling; a split can't exceed the session length
 
 /**
  * Cleans a user-supplied display name before it is stored and later rendered on
@@ -202,7 +202,7 @@ async function withinRateLimit(env, request, deviceId) {
 // and a minimum-elapsed check it also stops automated score farming.
 // NOTE: it does NOT make the score value itself trustworthy — the client still
 // computes it. True anti-cheat needs server-authoritative scoring (out of scope).
-const TOKEN_MIN_ELAPSED_MS = 30 * 1000;   // a real round is 60 s; reject suspiciously fast submits
+const TOKEN_MIN_ELAPSED_MS = 30 * 1000;   // a real round is 40 s; reject suspiciously fast submits
 const TOKEN_MAX_AGE_MS = 30 * 60 * 1000;  // tokens expire after 30 min
 
 const _enc = new TextEncoder();

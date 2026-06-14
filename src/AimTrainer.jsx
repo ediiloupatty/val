@@ -13,7 +13,7 @@ import { TEXT, MODE_TEXT } from './translations.js';
 const TARGET_DISTANCE = -8;
 // Floor height — targets must never clip through or touch it.
 const FLOOR_Y = -1.6;
-const SESSION_SECONDS = 60;
+const SESSION_SECONDS = 40;
 
 /*
  * Training modes. Each one reshapes how & where targets spawn:
@@ -1155,7 +1155,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     applyModeChange(key);
   };
 
-  /* -------------------------- 60s countdown timer --------------------------- */
+  /* -------------------------- 40s countdown timer --------------------------- */
   // (#1) Only counts down while the pointer is actually locked — pressing Esc
   // pauses the clock instead of bleeding time you can't play.
   useEffect(() => {
