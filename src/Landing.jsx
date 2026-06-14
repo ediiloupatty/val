@@ -6,6 +6,11 @@ import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
 
+// Set to true to rotate the landing background through the R2 wallpaper pool
+// (one per 2-week window). Disabled for now so only the Jett image is shown and
+// there's no flash-then-swap on refresh.
+const ROTATE_BG = false;
+
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
 // on every visit until this moment, then never appears again. Bump this date to
 // run a future announcement.
@@ -245,7 +250,9 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
   // Rotating landing background from R2: pick one deterministically per 2-week
   // window so it changes automatically. Falls back to the bundled image.
+  // Gated behind ROTATE_BG — currently off, so only the Jett image shows.
   useEffect(() => {
+    if (!ROTATE_BG) return;
     let alive = true;
     fetchBackgrounds().then((imgs) => {
       if (!alive || !imgs.length) return;
