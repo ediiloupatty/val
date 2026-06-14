@@ -22,6 +22,15 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [lbRange, setLbRange] = useState('week'); // 'week' | 'all'
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [donations, setDonations] = useState([]); // recent Saweria supporters
+  // Landing announcement banner. Bump the localStorage key (v1 -> v2 ...) to
+  // re-show it after changing the message.
+  const [showNotice, setShowNotice] = useState(() => {
+    try { return localStorage.getItem('vat_notice_v1') !== '1'; } catch { return true; }
+  });
+  const dismissNotice = () => {
+    setShowNotice(false);
+    try { localStorage.setItem('vat_notice_v1', '1'); } catch { /* ignore */ }
+  };
   // Share-card state: the generated PNG (as an object URL for preview) + its Blob
   // (for the Web Share API), and a flag while the canvas is rendering.
   const [shareUrl, setShareUrl] = useState(null);
@@ -290,6 +299,23 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           <p className="text-lg md:text-xl font-black tabular-nums text-val-accent">{best.score}</p>
         </div>
       </header>
+
+      {/* ---------- Announcement banner ---------- */}
+      {showNotice && (
+        <div className="absolute left-1/2 top-16 z-30 w-[92%] max-w-md -translate-x-1/2 md:top-20">
+          <div className="flex items-start gap-3 rounded-2xl border border-val-red/40 bg-val-red/15 px-4 py-3 shadow-lg backdrop-blur-sm">
+            <span className="text-base leading-none">⚠️</span>
+            <p className="flex-1 text-[11px] leading-relaxed text-slate-100 md:text-xs">{t.noticeText}</p>
+            <button
+              onClick={dismissNotice}
+              aria-label="Close"
+              className="-mt-0.5 shrink-0 text-slate-300 transition-colors hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ---------- Left menu ---------- */}
       <nav className="absolute left-6 md:left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-3">
