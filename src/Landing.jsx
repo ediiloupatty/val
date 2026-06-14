@@ -15,6 +15,7 @@ const NOTICE_EXPIRY = new Date('2026-06-21T23:59:59+07:00').getTime();
 // per contributor; `url` and `note` are optional.
 const CONTRIBUTORS = [
   { name: 'Conradium', url: 'https://github.com/Conradium', note: 'Security report' },
+  { name: 'Stephen', note: 'Gameplay exploit report' },
 ];
 
 // Contact / support destinations — edit to your own links.
