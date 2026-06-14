@@ -6,10 +6,14 @@ import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
 
-// Set to true to rotate the landing background through the R2 wallpaper pool
-// (one per 2-week window). Disabled for now so only the Jett image is shown and
-// there's no flash-then-swap on refresh.
-const ROTATE_BG = false;
+// Rotating landing background ("wallpaper of the day"). When on, one wallpaper
+// is chosen deterministically per ROTATE_WINDOW_DAYS window, so it's identical
+// on every reload within that window (no random flicker) and changes on its own
+// when the window rolls over. The choice is cached in localStorage + preloaded,
+// so reloads paint the right image immediately with no Jett-then-swap flash.
+const ROTATE_BG = true;
+const ROTATE_WINDOW_DAYS = 1; // 1 = daily; bump to 7 for weekly, 14 for fortnightly
+const BG_CACHE_KEY = 'vat_bg_cache'; // localStorage: last shown wallpaper URL
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
 // on every visit until this moment, then never appears again. Bump this date to
@@ -39,7 +43,12 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [lbRange, setLbRange] = useState('week'); // 'week' | 'all'
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [donations, setDonations] = useState([]); // recent Saweria supporters
-  const [bgUrl, setBgUrl] = useState(BG_URL); // rotating background (falls back to bundled)
+  // Start from the last wallpaper we showed (cached) so reloads paint it
+  // instantly — no flash of the bundled Jett image before the swap.
+  const [bgUrl, setBgUrl] = useState(() => {
+    if (typeof window === 'undefined') return BG_URL;
+    try { return localStorage.getItem(BG_CACHE_KEY) || BG_URL; } catch { return BG_URL; }
+  });
   // Landing announcement banner: shows on every visit until NOTICE_EXPIRY, then
   // auto-hides for everyone. The ✕ only closes it for the current session.
   const [showNotice, setShowNotice] = useState(() => Date.now() < NOTICE_EXPIRY);
@@ -248,19 +257,27 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   // Recent supporters for the right-side card (empty array hides the card).
   useEffect(() => { fetchDonations().then(setDonations); }, []);
 
-  // Rotating landing background from R2: pick one deterministically per 2-week
-  // window so it changes automatically. Falls back to the bundled image.
-  // Gated behind ROTATE_BG — currently off, so only the Jett image shows.
+  // "Wallpaper of the day": pick one R2 wallpaper deterministically per
+  // ROTATE_WINDOW_DAYS window, so every reload within the window shows the same
+  // image (stable, no flicker) and it rotates on its own when the window rolls
+  // over. The choice is preloaded before swapping (no half-loaded flash) and
+  // cached so the next reload paints it immediately. Falls back to the bundled
+  // Jett image if R2 is empty/unreachable.
   useEffect(() => {
     if (!ROTATE_BG) return;
     let alive = true;
     fetchBackgrounds().then((imgs) => {
       if (!alive || !imgs.length) return;
-      const fortnight = Math.floor(Date.now() / 86400000 / 14);
-      const chosen = imgs[fortnight % imgs.length];
+      const windowIndex = Math.floor(Date.now() / 86400000 / ROTATE_WINDOW_DAYS);
+      const chosen = imgs[windowIndex % imgs.length];
+      if (chosen === bgUrl) return; // already showing today's pick — no swap needed
       // Preload before swapping so there's no flash of a half-loaded image.
       const pre = new Image();
-      pre.onload = () => { if (alive) setBgUrl(chosen); };
+      pre.onload = () => {
+        if (!alive) return;
+        setBgUrl(chosen);
+        try { localStorage.setItem(BG_CACHE_KEY, chosen); } catch { /* ignore */ }
+      };
       pre.src = chosen;
     });
     return () => { alive = false; };
