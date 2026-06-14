@@ -1219,12 +1219,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
-  // Sidebar show/hide changes the canvas size with no window resize event —
-  // nudge the renderer to re-fit after the layout settles.
+  // The arena canvas is full-screen at all times (the sidebar slides over it),
+  // so entering/leaving play no longer resizes it. Only entering/exiting
+  // fullscreen changes the viewport — nudge the renderer to re-fit then.
   useEffect(() => {
     const id = setTimeout(() => engine.current?.resize(), 60);
     return () => clearTimeout(id);
-  }, [isFullscreen, isRunning, isLocked]);
+  }, [isFullscreen]);
 
   /* -------------------------------- Render ---------------------------------- */
   // Mobile / touch devices can't aim — show a "use a desktop" screen instead.
@@ -1244,11 +1245,18 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   return (
     <div
       ref={rootRef}
-      className="flex h-screen w-screen bg-val-dark font-sans text-slate-200 select-none"
+      className="relative h-screen w-screen overflow-hidden bg-val-dark font-sans text-slate-200 select-none"
     >
       {/* ============================ SIDEBAR ============================ */}
-      {!isFullscreen && (!isRunning || !isLocked) && (
-      <aside className="no-scrollbar flex h-full w-80 shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-[#141d24] p-6">
+      {/* Always mounted so it can slide in/out; translated off-screen during
+          locked play or fullscreen. The arena canvas stays full-screen
+          underneath at all times, so toggling play never resizes the WebGL
+          canvas — the result is a smooth slide with no map glitch. */}
+      <aside
+        className={`no-scrollbar absolute left-0 top-0 z-20 flex h-full w-80 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-[#141d24] p-6 transition-transform duration-300 ease-out ${
+          isFullscreen || (isRunning && isLocked) ? '-translate-x-full' : 'translate-x-0'
+        }`}
+      >
         <header className="flex items-start justify-between">
           <div className="flex items-center gap-2.5">
             <img
@@ -1432,10 +1440,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           {t.tip}
         </p>
       </aside>
-      )}
 
       {/* ============================ ARENA ============================ */}
-      <main className="relative flex-1">
+      <main className="absolute inset-0">
         <div ref={mountRef} className="absolute inset-0" />
 
         {/* Vignette overlay — written to directly by the rAF loop, no React state */}
