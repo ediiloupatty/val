@@ -12,7 +12,12 @@ const BG_URL = '/img/jett-background.webp';
 // when the window rolls over. The choice is cached in localStorage + preloaded,
 // so reloads paint the right image immediately with no Jett-then-swap flash.
 const ROTATE_BG = true;
-const ROTATE_WINDOW_DAYS = 1; // 1 = daily; bump to 7 for weekly, 14 for fortnightly
+const ROTATE_WINDOW_DAYS = 14; // length of each wallpaper window (14 = fortnightly)
+// Rotation is anchored: window 0 begins at ROTATE_ANCHOR and shows
+// ROTATE_START_KEY; each window after advances one wallpaper through the sorted
+// R2 pool, wrapping around. This lets us pin which wallpaper shows "now".
+const ROTATE_ANCHOR = Date.UTC(2026, 5, 14); // 2026-06-14
+const ROTATE_START_KEY = 'zhranx15-05'; // wallpaper for the current window, then rotate
 const BG_CACHE_KEY = 'vat_bg_cache'; // localStorage: last shown wallpaper URL
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
@@ -268,9 +273,13 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     let alive = true;
     fetchBackgrounds().then((imgs) => {
       if (!alive || !imgs.length) return;
-      const windowIndex = Math.floor(Date.now() / 86400000 / ROTATE_WINDOW_DAYS);
-      const chosen = imgs[windowIndex % imgs.length];
-      if (chosen === bgUrl) return; // already showing today's pick — no swap needed
+      // imgs come back sorted by the worker. Anchor on ROTATE_START_KEY so the
+      // current window shows that wallpaper, then step forward one per window.
+      const startIdx = Math.max(0, imgs.findIndex((u) => u.includes(ROTATE_START_KEY)));
+      const windowsElapsed = Math.floor((Date.now() - ROTATE_ANCHOR) / (ROTATE_WINDOW_DAYS * 86400000));
+      const idx = (((startIdx + windowsElapsed) % imgs.length) + imgs.length) % imgs.length;
+      const chosen = imgs[idx];
+      if (chosen === bgUrl) return; // already showing this window's pick — no swap needed
       // Preload before swapping so there's no flash of a half-loaded image.
       const pre = new Image();
       pre.onload = () => {
