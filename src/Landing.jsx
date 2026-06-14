@@ -11,6 +11,12 @@ const BG_URL = '/img/jett-background.webp';
 // run a future announcement for another week.
 const NOTICE_EXPIRY = new Date('2026-06-21T23:59:59+07:00').getTime();
 
+// People credited in the Credits modal's "Special Thanks" section. Add an entry
+// per contributor; `url` and `note` are optional.
+const CONTRIBUTORS = [
+  { name: 'Conradium', url: 'https://github.com/Conradium', note: 'Security report' },
+];
+
 // Contact / support destinations — edit to your own links.
 const CONTACT = {
   email: 'muhammadlikmansyah143@gmail.com',
@@ -498,6 +504,32 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             <CreditRow label={t.builtWith} value="React · Three.js · Tailwind CSS" />
             <CreditRow label={t.inspiredBy} value="Valorant (Riot Games) - fan project" />
           </div>
+          {CONTRIBUTORS.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <p className="mb-2 text-[10px] uppercase tracking-widest text-slate-400">
+                {t.specialThanks}
+              </p>
+              <ul className="space-y-1.5">
+                {CONTRIBUTORS.map((c) => (
+                  <li key={c.name} className="flex items-center justify-between gap-2 text-sm">
+                    {c.url ? (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-bold text-val-accent hover:underline"
+                      >
+                        {c.name}
+                      </a>
+                    ) : (
+                      <span className="font-bold text-white">{c.name}</span>
+                    )}
+                    {c.note && <span className="text-[11px] text-slate-400">{c.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
             {t.creditsTip}
           </p>
