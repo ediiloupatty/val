@@ -680,12 +680,16 @@ export default {
         const amount = Math.max(0, Math.round(Number(body.amount_raw ?? body.amount ?? 0)) || 0);
         const message = String(body.message || "")
           .replace(/[\u0000-\u001F\u007F<>]/g, "").trim().slice(0, 140);
+        // Email keys the aggregation: repeat donors from the same email get their
+        // amounts summed and their displayed name updated to the latest one.
+        const email = String(body.donator_email || body.email || "")
+          .replace(/[\u0000-\u001F\u007F<>]/g, "").trim().slice(0, 120).toLowerCase();
         const createdAt = body.created_at ? String(body.created_at).slice(0, 40) : new Date().toISOString();
 
         // INSERT OR IGNORE dedupes if Saweria retries the same transaction id.
         await env.DB.prepare(
-          "INSERT OR IGNORE INTO donations (id, name, amount, message, created_at) VALUES (?, ?, ?, ?, ?)"
-        ).bind(id, name, amount, message, createdAt).run();
+          "INSERT OR IGNORE INTO donations (id, name, amount, message, email, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(id, name, amount, message, email, createdAt).run();
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { "Content-Type": "application/json" },
@@ -701,9 +705,26 @@ export default {
     // GET /api/donations — top donations (largest first) for the supporters card.
     if (path === "/api/donations" && request.method === "GET") {
       try {
-        const { results } = await env.DB.prepare(
-          "SELECT name, amount, created_at FROM donations ORDER BY amount DESC, created_at DESC LIMIT 20"
-        ).all();
+        // Aggregate by email: donors sharing an email have their amounts summed
+        // and show their most recent name. Rows without an email stay separate
+        // (grouped by their own id). Largest total first.
+        const { results } = await env.DB.prepare(`
+          SELECT name, total AS amount, last_at AS created_at FROM (
+            SELECT
+              name,
+              SUM(amount) OVER (PARTITION BY grp) AS total,
+              MAX(created_at) OVER (PARTITION BY grp) AS last_at,
+              ROW_NUMBER() OVER (PARTITION BY grp ORDER BY created_at DESC, rowid DESC) AS rn
+            FROM (
+              SELECT name, amount, created_at, rowid,
+                     COALESCE(NULLIF(email, ''), 'id:' || id) AS grp
+              FROM donations
+            )
+          )
+          WHERE rn = 1
+          ORDER BY amount DESC, created_at DESC
+          LIMIT 20
+        `).all();
         const data = (results || []).map((r) => ({
           name: r.name,
           amount: Number(r.amount) || 0,

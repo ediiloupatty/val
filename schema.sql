@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS donations (
   name TEXT NOT NULL,
   amount INTEGER NOT NULL DEFAULT 0,
   message TEXT,
+  email TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations (created_at);
