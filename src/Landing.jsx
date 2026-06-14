@@ -24,6 +24,9 @@ const BG_CACHE_KEY = 'vat_bg_cache'; // localStorage: last shown wallpaper URL
 // on every visit until this moment, then never appears again. Bump this date to
 // run a future announcement.
 const NOTICE_EXPIRY = new Date('2026-07-14T23:59:59+07:00').getTime();
+// localStorage key remembering that the user closed the current banner (✕),
+// keyed by NOTICE_EXPIRY so a new announcement re-shows automatically.
+const NOTICE_DISMISS_KEY = 'vat_notice_dismissed';
 
 // People credited in the Credits modal's "Special Thanks" section. Add an entry
 // per contributor; `url` and `note` are optional.
@@ -54,10 +57,18 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     if (typeof window === 'undefined') return BG_URL;
     try { return localStorage.getItem(BG_CACHE_KEY) || BG_URL; } catch { return BG_URL; }
   });
-  // Landing announcement banner: shows on every visit until NOTICE_EXPIRY, then
-  // auto-hides for everyone. The ✕ only closes it for the current session.
-  const [showNotice, setShowNotice] = useState(() => Date.now() < NOTICE_EXPIRY);
-  const dismissNotice = () => setShowNotice(false);
+  // Landing announcement banner: shows until NOTICE_EXPIRY, then auto-hides for
+  // everyone. Clicking ✕ dismisses it for good on this device — we remember the
+  // dismissed banner by its expiry, so a future announcement (new NOTICE_EXPIRY)
+  // shows again automatically.
+  const [showNotice, setShowNotice] = useState(() => {
+    if (Date.now() >= NOTICE_EXPIRY) return false;
+    try { return localStorage.getItem(NOTICE_DISMISS_KEY) !== String(NOTICE_EXPIRY); } catch { return true; }
+  });
+  const dismissNotice = () => {
+    setShowNotice(false);
+    try { localStorage.setItem(NOTICE_DISMISS_KEY, String(NOTICE_EXPIRY)); } catch { /* ignore */ }
+  };
   // Share-card state: the generated PNG (as an object URL for preview) + its Blob
   // (for the Web Share API), and a flag while the canvas is rendering.
   const [shareUrl, setShareUrl] = useState(null);
