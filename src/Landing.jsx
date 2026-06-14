@@ -637,9 +637,20 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           </div>
           <div className="h-[50vh] overflow-y-auto overscroll-contain no-scrollbar md:h-[55vh]">
           {board === null ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-[#00e5c0]" />
-            </div>
+            // Skeleton loader: greyed-out row placeholders that mimic the
+            // leaderboard's shape while scores load, instead of a bare spinner.
+            <ul className="space-y-1.5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <li key={i} className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3">
+                  <div className="h-4 w-7 shrink-0 animate-pulse rounded bg-white/10" />
+                  <div
+                    className="h-4 animate-pulse rounded bg-white/10"
+                    style={{ width: `${58 - i * 4}%` }}
+                  />
+                  <div className="ml-auto h-4 w-12 shrink-0 animate-pulse rounded bg-white/10" />
+                </li>
+              ))}
+            </ul>
           ) : boardError ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <p className="mb-3 text-sm text-slate-400">{t.leaderboardError}</p>
