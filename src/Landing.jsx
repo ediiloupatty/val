@@ -796,7 +796,7 @@ function Modal({ title, children, onClose }) {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
       onClick={onClose}
     >
       <div
@@ -805,7 +805,7 @@ function Modal({ title, children, onClose }) {
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className="no-scrollbar w-full max-w-md max-h-[80dvh] overflow-y-auto overscroll-contain rounded-[2rem] border border-white/10 bg-[#141d24] p-7 shadow-2xl focus:outline-none"
+        className="no-scrollbar w-full max-w-md max-h-[80dvh] overflow-y-auto overscroll-contain rounded-[2rem] border border-white/10 bg-[#141d24]/80 p-7 shadow-2xl backdrop-blur-xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
