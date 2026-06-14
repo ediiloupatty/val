@@ -612,8 +612,8 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
       )}
 
       {panel === 'leaderboard' && (
-        <Modal title={t.leaderboard} onClose={() => setPanel(null)}>
-          <div className="-mt-2 mb-4 flex items-center justify-between gap-2">
+        <Modal title={t.leaderboard} onClose={() => setPanel(null)} scroll={false}>
+          <div className="-mt-2 mb-4 flex shrink-0 items-center justify-between gap-2">
             <div className="flex rounded-full bg-white/5 p-0.5">
               {[['week', t.lbWeekly], ['all', t.lbAllTime]].map(([r, label]) => (
                 <button
@@ -635,7 +635,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               ↻ {t.leaderboardRetry}
             </button>
           </div>
-          <div className="h-[50vh] overflow-y-auto overscroll-contain no-scrollbar md:h-[55vh]">
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {board === null ? (
             // Skeleton loader: greyed-out row placeholders that mimic the
             // leaderboard's shape while scores load, instead of a bare spinner.
@@ -652,7 +652,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               ))}
             </ul>
           ) : boardError ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="flex min-h-[40vh] flex-col items-center justify-center text-center">
               <p className="mb-3 text-sm text-slate-400">{t.leaderboardError}</p>
               <button
                 onClick={loadLeaderboard}
@@ -662,7 +662,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               </button>
             </div>
           ) : board.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex min-h-[40vh] items-center justify-center">
               <p className="text-center text-sm text-slate-400">{t.leaderboardEmpty}</p>
             </div>
           ) : (
@@ -720,7 +720,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           )}
           </div>
           {/* Warm thank-you to the players, pinned below the scroll area */}
-          <p className="mt-4 border-t border-white/10 pt-4 text-center text-[11px] leading-relaxed text-slate-400">
+          <p className="mt-4 shrink-0 border-t border-white/10 pt-4 text-center text-[11px] leading-relaxed text-slate-400">
             {t.lbThanks}
           </p>
         </Modal>
@@ -823,7 +823,7 @@ function MenuItem({ label, onClick }) {
   );
 }
 
-function Modal({ title, children, onClose }) {
+function Modal({ title, children, onClose, scroll = true }) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
@@ -864,10 +864,10 @@ function Modal({ title, children, onClose }) {
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className="no-scrollbar w-full max-w-md max-h-[80dvh] overflow-y-auto overscroll-contain rounded-[2rem] border border-white/10 bg-[#141d24]/80 p-7 shadow-2xl backdrop-blur-xl focus:outline-none"
+        className="flex max-h-[80dvh] w-full max-w-md flex-col rounded-[2rem] border border-white/10 bg-[#141d24]/80 p-7 shadow-2xl backdrop-blur-xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex shrink-0 items-center justify-between">
           <h2 id="modal-title" className="text-xl font-black uppercase tracking-widest text-val-red">{title}</h2>
           <button
             onClick={onClose}
@@ -877,7 +877,15 @@ function Modal({ title, children, onClose }) {
             ✕
           </button>
         </div>
-        {children}
+        {/* scroll=true: whole body scrolls (default). scroll=false: the panel
+            manages its own internal scroll so its header/footer stay pinned. */}
+        {scroll ? (
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {children}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        )}
       </div>
     </div>
   );
