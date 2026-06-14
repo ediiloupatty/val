@@ -134,6 +134,7 @@ export async function submitScore(deviceId, name, session, token) {
         score: session.score,
         accuracy: session.accuracy,
         split: session.split,
+        targetSize: session.targetSize,
         log: session.log,
         token,
       }),
@@ -200,9 +201,12 @@ export async function fetchDonations() {
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */
-export async function fetchLeaderboard(range = 'week') {
+export async function fetchLeaderboard(range = 'week', mode = 'all') {
   try {
-    const qs = range === 'all' ? '?range=all' : '';
+    const params = new URLSearchParams();
+    if (range === 'all') params.set('range', 'all');
+    if (mode && mode !== 'all') params.set('mode', mode);
+    const qs = params.toString() ? `?${params}` : '';
     const res = await fetchWithTimeout(`${API_URL}/api/leaderboard${qs}`);
     if (res.ok) {
       const json = await res.json();

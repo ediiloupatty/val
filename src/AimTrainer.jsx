@@ -56,6 +56,12 @@ const MODES = {
 };
 const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe'];
 
+// Standard target-size band for the per-mode leaderboard (must match worker.js
+// RANKED_SIZE_MIN/MAX). Outside this, scores still count on the "All" board but
+// not on the fair per-mode boards — the UI warns the player.
+const RANKED_SIZE_MIN = 0.12;
+const RANKED_SIZE_MAX = 0.35;
+
 /* ---- Settings defaults & loader (module scope — computed once, not per render) ----
  * Keeping these outside the component avoids recreating the object literal and
  * running the localStorage parse on every single re-render.
@@ -1186,6 +1192,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         score,
         accuracy,
         split: avgRt,
+        targetSize,
         log: {
           mode: modeKey,
           durationMs: Math.round(performance.now() - ev.startedAt),
@@ -1389,6 +1396,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
             onChange={setTargetSize}
             display={targetSize.toFixed(2)}
           />
+          {targetSize > RANKED_SIZE_MAX && (
+            <p className="-mt-3 text-[11px] leading-snug text-val-red/90">
+              {t.sizeOutOfBand}
+            </p>
+          )}
 
           {/* Crosshair customizer */}
           <div className="space-y-2 border-t border-white/5 pt-3">

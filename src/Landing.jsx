@@ -49,6 +49,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
   const [lbRange, setLbRange] = useState('week'); // 'week' | 'all'
+  const [lbMode, setLbMode] = useState('all'); // 'all' | mode key (micro, wide, …)
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [donations, setDonations] = useState([]); // recent Saweria supporters
   // Start from the last wallpaper we showed (cached) so reloads paint it
@@ -130,7 +131,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     let alive = true;
     setBoard(null);
     setBoardError(false);
-    fetchLeaderboard(lbRange).then(({ rows, error }) => {
+    fetchLeaderboard(lbRange, lbMode).then(({ rows, error }) => {
       if (!alive) return;
       if (error) {
         setBoardError(true);
@@ -150,7 +151,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     if (deviceId) fetchRank(deviceId).then(setMyRankInfo);
     return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel, lbRange]);
+  }, [panel, lbRange, lbMode]);
 
   // Check for a session backup left by a browser crash / unexpected close.
   useEffect(() => {
@@ -635,6 +636,28 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               ↻ {t.leaderboardRetry}
             </button>
           </div>
+          {/* Per-mode tabs. "All" is the overall board (every size, incl. legacy
+              scores); each mode is the fair board (standard target size only). */}
+          <div className="no-scrollbar -mt-2 mb-3 flex shrink-0 gap-1.5 overflow-x-auto">
+            {[
+              ['all', t.lbAllModes], ['micro', t.lbModeMicro], ['wide', t.lbModeWide],
+              ['reflex', t.lbModeReflex], ['grid', t.lbModeGrid], ['head', t.lbModeHead],
+              ['strafe', t.lbModeStrafe],
+            ].map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setLbMode(m)}
+                className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  lbMode === m ? 'bg-val-accent/20 text-val-accent' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {lbMode !== 'all' && (
+            <p className="-mt-1 mb-3 shrink-0 text-[11px] leading-snug text-slate-500">{t.lbModeHint}</p>
+          )}
           <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {board === null ? (
             // Skeleton loader: greyed-out row placeholders that mimic the
@@ -667,7 +690,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
             </div>
           ) : (
             <>
-            <ol key={lbRange} className="animate-lb space-y-1.5">
+            <ol key={lbRange + lbMode} className="animate-lb space-y-1.5">
               {board.map((row, i) => {
                 const isYou = row.deviceId === deviceId;
                 const medal = ['🥇', '🥈', '🥉'][i];
@@ -691,6 +714,11 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
                         </span>
                       )}
                     </span>
+                    {row.targetSize != null && (
+                      <span className="shrink-0 text-[10px] font-bold tabular-nums text-slate-500" title={t.targetSize}>
+                        ⌀{row.targetSize.toFixed(2)}
+                      </span>
+                    )}
                     <span className="shrink-0 text-sm font-black tabular-nums text-val-accent">
                       {row.score.toLocaleString()}
                     </span>
@@ -698,7 +726,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
                 );
               })}
             </ol>
-            {lbRange === 'week' && myRankInfo && !board.some((r) => r.deviceId === deviceId) && (
+            {lbRange === 'week' && lbMode === 'all' && myRankInfo && !board.some((r) => r.deviceId === deviceId) && (
               <div className="mt-3 border-t border-white/10 pt-3">
                 <div className="flex items-center gap-3 rounded-2xl border border-val-accent/30 bg-val-accent/10 px-4 py-3">
                   <span className="w-7 shrink-0 text-center text-sm font-black tabular-nums text-slate-400">

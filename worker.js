@@ -87,6 +87,15 @@ function validateGameStats({ score, accuracy, split }) {
 //
 // Scoring formula MUST mirror the client (AimTrainer.jsx onHit):
 //   pts = 100 + round(max(0, 600 - bonusInterval) / 3)   // bonusInterval null => +100 only
+// Training modes eligible for the per-mode leaderboard (must match the client's
+// MODES keys). Anything else is stored as NULL and only shows on the "All" board.
+const RANKED_MODES = new Set(["micro", "wide", "reflex", "grid", "head", "strafe"]);
+// Standard target-size band for the per-mode leaderboard. Bigger targets are
+// easier and inflate scores, so scores above the cap are kept out of the fair
+// per-mode boards (they still count on "All"). Mirrors the client slider's min.
+const RANKED_SIZE_MIN = 0.12;
+const RANKED_SIZE_MAX = 0.35;
+
 const HIT_BASE_POINTS = 100;
 const HIT_BONUS_REF_MS = 600;     // intervals at/above this earn no bonus
 const HIT_BONUS_DIVISOR = 3;      // => max bonus 200, max 300 pts/hit
@@ -484,7 +493,7 @@ export default {
     if (path === "/api/score" && request.method === "POST") {
       try {
         const body = await request.json();
-        const { deviceId, name, score, accuracy, split, log, token } = body;
+        const { deviceId, name, score, accuracy, split, log, token, targetSize } = body;
 
         if (!deviceId || !name || score == null) {
           return new Response(
@@ -562,14 +571,22 @@ export default {
           );
         }
 
+        // Mode/size are display + filter metadata (not part of score derivation),
+        // so they're trusted but bounded: unknown mode or implausible size → NULL.
+        const mode = log && RANKED_MODES.has(log.mode) ? log.mode : null;
+        const sizeNum = Number(targetSize);
+        const safeSize = Number.isFinite(sizeNum) && sizeNum > 0 && sizeNum <= 2 ? sizeNum : null;
+
         await env.DB.prepare(
-          "INSERT INTO scores (device_id, name, score, accuracy, split, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+          "INSERT INTO scores (device_id, name, score, accuracy, split, mode, target_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         ).bind(
           deviceId,
           sanitizeName(name),
           verified.score,
           verified.accuracy,
           verified.split,
+          mode,
+          safeSize,
           new Date().toISOString()
         ).run();
 
@@ -632,15 +649,28 @@ export default {
         const allTime = url.searchParams.get("range") === "all";
         const since = allTime ? "1970-01-01T00:00:00.000Z"
           : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        // A specific, known mode → the fair per-mode board: filtered to that mode
+        // and the standard target-size band. Otherwise → the overall "All" board.
+        const modeParam = url.searchParams.get("mode");
+        const perMode = modeParam && RANKED_MODES.has(modeParam);
+
+        const where = perMode
+          ? "s.created_at >= ? AND s.mode = ? AND s.target_size >= ? AND s.target_size <= ?"
+          : "s.created_at >= ?";
+        const binds = perMode
+          ? [since, modeParam, RANKED_SIZE_MIN, RANKED_SIZE_MAX]
+          : [since];
+
         const { results } = await env.DB.prepare(`
-          SELECT s.device_id, COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split
+          SELECT s.device_id, COALESCE(p.name, s.name) AS name, MAX(s.score) AS score, s.accuracy, s.split, s.target_size
           FROM scores s
           LEFT JOIN profiles p ON s.device_id = p.device_id
-          WHERE s.created_at >= ?
+          WHERE ${where}
           GROUP BY s.device_id
           ORDER BY score DESC
           LIMIT 10
-        `).bind(since).all();
+        `).bind(...binds).all();
 
         const data = (results || []).map((row) => ({
           deviceId: row.device_id,
@@ -648,6 +678,7 @@ export default {
           score: Number(row.score) || 0,
           accuracy: Number(row.accuracy) || 0,
           split: Number(row.split) || 0,
+          targetSize: row.target_size == null ? null : Number(row.target_size),
         }));
 
         return new Response(
