@@ -319,7 +319,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">
             ❤ {t.supporters}
           </p>
-          <ul className="flex max-h-[11rem] flex-col gap-2 overflow-y-auto pr-1">
+          <ul className="no-scrollbar flex max-h-[11rem] flex-col gap-2 overflow-y-auto pr-1">
             {donations.map((d, i) => (
               <li key={i} className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate text-slate-200">{d.name}</span>
