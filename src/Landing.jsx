@@ -393,17 +393,15 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
         {t.footerText}
       </footer>
 
-      {/* ---------- Background credit (shown only when an R2 wallpaper is displayed) ---------- */}
-      {bgUrl !== BG_URL && (
-        <a
-          href="https://alphacoders.com/users/profile/235636/Zhranx15"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-4 right-4 z-10 text-[8px] md:text-[9px] tracking-widest text-slate-500/70 transition-colors hover:text-slate-300"
-        >
-          Background by Zhranx15
-        </a>
-      )}
+      {/* ---------- Background credit (every wallpaper, incl. the Jett one, is Zhranx15's work) ---------- */}
+      <a
+        href="https://alphacoders.com/users/profile/235636/Zhranx15"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-4 right-4 z-10 text-[8px] md:text-[9px] tracking-widest text-slate-500/70 transition-colors hover:text-slate-300"
+      >
+        Background by Zhranx15
+      </a>
 
       {/* ---------- Panels ---------- */}
       {panel === 'profile' && (
