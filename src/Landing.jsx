@@ -6,6 +6,11 @@ import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 // Landing background (converted from PNG → WebP for a much smaller file).
 const BG_URL = '/img/jett-background.webp';
 
+// Apology banner auto-expires one week after the cleanup (2026-06-14). It shows
+// on every visit until this moment, then never appears again. Bump this date to
+// run a future announcement for another week.
+const NOTICE_EXPIRY = new Date('2026-06-21T23:59:59+07:00').getTime();
+
 // Contact / support destinations — edit to your own links.
 const CONTACT = {
   email: 'muhammadlikmansyah143@gmail.com',
@@ -22,15 +27,10 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const [lbRange, setLbRange] = useState('week'); // 'week' | 'all'
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [donations, setDonations] = useState([]); // recent Saweria supporters
-  // Landing announcement banner. Bump the localStorage key (v1 -> v2 ...) to
-  // re-show it after changing the message.
-  const [showNotice, setShowNotice] = useState(() => {
-    try { return localStorage.getItem('vat_notice_v2') !== '1'; } catch { return true; }
-  });
-  const dismissNotice = () => {
-    setShowNotice(false);
-    try { localStorage.setItem('vat_notice_v2', '1'); } catch { /* ignore */ }
-  };
+  // Landing announcement banner: shows on every visit until NOTICE_EXPIRY, then
+  // auto-hides for everyone. The ✕ only closes it for the current session.
+  const [showNotice, setShowNotice] = useState(() => Date.now() < NOTICE_EXPIRY);
+  const dismissNotice = () => setShowNotice(false);
   // Share-card state: the generated PNG (as an object URL for preview) + its Blob
   // (for the Web Share API), and a flag while the canvas is rendering.
   const [shareUrl, setShareUrl] = useState(null);
