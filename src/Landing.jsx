@@ -316,6 +316,29 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none">
 
+      {/* ---- SEO content for crawlers & screen readers (visually hidden, fully
+           readable by Google). Bilingual ID/EN to target both audiences. Mirrors
+           the FAQPage structured data in index.html. ---- */}
+      <section className="sr-only">
+        <h1>AIMKU — Tempat Latihan Aim Gratis Gaya Valorant di Browser | Free Valorant-style Aim Trainer</h1>
+        <p>
+          AIMKU adalah tempat latihan aim online gratis bergaya Valorant yang berjalan
+          langsung di browser, tanpa download dan tanpa install. Latih micro flick, wide
+          flick, reflex, dan gridshot untuk meningkatkan akurasi tembakanmu di Valorant dan
+          game FPS lainnya. AIMKU is a free browser-based aim trainer inspired by Valorant —
+          practice micro flicks, wide flicks, reflex pop, and gridshot with no download required.
+        </p>
+        <h2>Pertanyaan Umum (FAQ)</h2>
+        <h3>Apa itu AIMKU?</h3>
+        <p>AIMKU adalah tempat latihan aim gratis bergaya Valorant yang berjalan langsung di browser, tanpa perlu download atau install.</p>
+        <h3>Apakah latihan aim di AIMKU gratis?</h3>
+        <p>Ya, AIMKU sepenuhnya gratis — tanpa biaya, tanpa akun, dan tanpa download.</p>
+        <h3>Apakah AIMKU bisa membantu aim di Valorant?</h3>
+        <p>Bisa. AIMKU meniru gaya tembak Valorant. Matikan akselerasi mouse OS agar sensitivitas cocok 1:1 dengan Valorant.</p>
+        <h3>Apakah perlu download untuk latihan aim?</h3>
+        <p>Tidak. AIMKU berjalan langsung di browser komputer maupun HP, jadi tidak perlu download seperti Aimlab atau Kovaak.</p>
+      </section>
+
       {/* ---- Parallax background image — shifts with mouse (3D depth illusion) ---- */}
       <div
         ref={bgRef}
