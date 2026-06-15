@@ -10,6 +10,32 @@ const AimTrainer = lazy(() => import('./AimTrainer.jsx'));
 
 let toastSeq = 0;
 
+// Cache the profile (name + best) in localStorage so every tab in the same
+// browser shows the same identity instantly — before the async server fetch
+// resolves — instead of flashing the default "Agent" / 0, which looked like a
+// brand-new user. The persistent deviceId stays the source of truth; this is
+// just a local mirror for an instant, flicker-free first paint.
+const PROFILE_CACHE_KEY = 'vat_profile';
+const DEFAULT_BEST = { score: 0, accuracy: 0, split: 0 };
+
+function readProfileCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(PROFILE_CACHE_KEY));
+    if (c && typeof c.name === 'string' && c.best) return c;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeProfileCache(name, best) {
+  try {
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ name, best }));
+  } catch {
+    /* ignore */
+  }
+}
+
 function ToastContainer({ toasts }) {
   return (
     <div className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-2 pointer-events-none">
@@ -56,10 +82,12 @@ export default function App() {
   // Unique Device ID for Cloudflare R2 Sync
   const [deviceId] = useState(() => getDeviceId());
 
-  // Profile and High Scores State
-  const [name, setName] = useState('Agent');
-  const [best, setBest] = useState({ score: 0, accuracy: 0, split: 0 });
-  const [profileLoading, setProfileLoading] = useState(true);
+  // Profile and High Scores State — hydrated synchronously from the local cache
+  // so a freshly opened tab shows the existing user immediately, not "Agent".
+  const [name, setName] = useState(() => readProfileCache()?.name || 'Agent');
+  const [best, setBest] = useState(() => readProfileCache()?.best || { ...DEFAULT_BEST });
+  // Only show the loading shimmer when there's nothing cached to display yet.
+  const [profileLoading, setProfileLoading] = useState(() => !readProfileCache());
 
   // Toast notifications
   const [toasts, setToasts] = useState([]);
@@ -75,18 +103,17 @@ export default function App() {
   }, []);
   useEffect(() => () => { toastTimers.current.forEach(clearTimeout); }, []);
 
-  // Load Profile on Mount from Cloudflare D1
+  // Load Profile on Mount from Cloudflare D1, then refresh the local cache so the
+  // next tab/visit paints the up-to-date identity instantly.
   useEffect(() => {
     async function loadProfile() {
-      setProfileLoading(true);
       const dbData = await fetchProfile(deviceId);
       if (dbData) {
-        if (dbData.name) {
-          setName(dbData.name);
-        }
-        if (dbData.best) {
-          setBest(dbData.best);
-        }
+        const nextName = dbData.name || readProfileCache()?.name || 'Agent';
+        const nextBest = dbData.best || readProfileCache()?.best || { ...DEFAULT_BEST };
+        setName(nextName);
+        setBest(nextBest);
+        writeProfileCache(nextName, nextBest);
       }
       setProfileLoading(false);
     }
@@ -112,6 +139,7 @@ export default function App() {
       resolvedName = typeof updater === 'function' ? updater(prev) : updater;
       return resolvedName;
     });
+    writeProfileCache(resolvedName, best);
     saveProfile(deviceId, resolvedName, best).then(({ ok }) => {
       if (ok) showToast(t.profileSaveOk, 'success');
       else showToast(t.profileSaveError, 'error');
@@ -122,6 +150,7 @@ export default function App() {
     setBest((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       saveProfile(deviceId, name, next);
+      writeProfileCache(name, next);
       return next;
     });
   };
