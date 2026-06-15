@@ -184,7 +184,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const shots = hits + misses;
   const accuracy = shots > 0 ? (hits / shots) * 100 : 0;
 
-  // (#3) Transient floating feedback near the crosshair.
+  // Transient floating feedback near the crosshair.
   const addPopup = useCallback((text, color) => {
     const id = ++popupSeq.current;
     setPopups((p) => [...p, { id, text, color, dx: Math.random() * 70 - 35 }]);
@@ -777,7 +777,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
     // --- Render loop (uncapped for 144Hz+ displays) ---------------------------
     let animId;
-    // (B) FPS meter — averaged over a short window, reported ~4x/second so it
+    // FPS meter — averaged over a short window, reported ~4x/second so it
     // doesn't spam React state on every single frame.
     let lastFrame = performance.now();
     let fpsFrames = 0;
@@ -959,7 +959,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       setLocked:  () => {},
       onFps:      () => {},
       onMoveState:() => {},
-      // New: bloom & vignette driven by the rAF loop, NOT React state
+      // Bloom & vignette are driven by the rAF loop, not React state.
       onBloom:    () => {},
       onVig:      () => {},
     };
@@ -1009,7 +1009,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       // recompute pts itself and reject timing that's physically impossible.
       let bonusInterval = null;
       if (cfgRef.current.mode.reflex) {
-        // (#2) Reflex Pop: the meaningful metric is pure reaction (spawn→hit),
+        // Reflex Pop: the meaningful metric is pure reaction (spawn→hit),
         // NOT the gap between hits (which would include the random spawn delay).
         if (reactionMs != null) {
           s.sum += reactionMs;
@@ -1035,7 +1035,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       });
       setHits((h) => h + 1);
       setScore((v) => v + pts);
-      addPopup(`+${pts}`, '#00e5c0'); // (#3) feedback
+      addPopup(`+${pts}`, '#00e5c0');
       setHitKey((k) => k + 1);
     };
     engine.current.onMiss = () => {
@@ -1156,7 +1156,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   };
 
   /* -------------------------- 40s countdown timer --------------------------- */
-  // (#1) Only counts down while the pointer is actually locked — pressing Esc
+  // Only counts down while the pointer is actually locked — pressing Esc
   // pauses the clock instead of bleeding time you can't play.
   useEffect(() => {
     if (!isRunning || !isLocked) return;
@@ -1174,7 +1174,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     return () => clearInterval(id);
   }, [isRunning, isLocked, endGame]);
 
-  /* ----------- (#5) Persist personal bests when a session finishes ---------- */
+  /* ------------- Persist personal bests when a session finishes ------------- */
   useEffect(() => {
     if (!hasPlayed || timeLeft !== 0) return;
     setNewHigh(score > best.score);
@@ -1493,7 +1493,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           </button>
         </div>
 
-        {/* (#3) Hitmarker — remounts on every hit to replay the burst anim */}
+        {/* Hitmarker — remounts on every hit to replay the burst anim */}
         {hitKey > 0 && (
           <div
             key={hitKey}
@@ -1503,7 +1503,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           </div>
         )}
 
-        {/* (#3) Floating +score / MISS popups near the crosshair */}
+        {/* Floating +score / MISS popups near the crosshair */}
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
           {popups.map((p) => (
             <span
