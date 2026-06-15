@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
 import { fetchLeaderboard, fetchRank, fetchDonations, fetchBackgrounds } from './api.js';
 import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
+import { loadSettings, saveSettings, loadMuted, saveMuted, TARGET_COLORS } from './settings.js';
 
 // Leaderboard mode filter: [mode key, translation key]. 'all' = overall board.
 const LB_MODE_TABS = [
@@ -432,6 +433,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
 
         <MenuItem label={t.leaderboard} onClick={() => setPanel('leaderboard')} />
         <MenuItem label={t.profile} onClick={() => setPanel('profile')} />
+        <MenuItem label={`⚙ ${t.settings}`} onClick={() => setPanel('settings')} />
         <MenuItem label={t.credits} onClick={() => setPanel('credits')} />
         <MenuItem label={`👋 ${t.support}`} onClick={() => setPanel('support')} />
         <MenuItem
@@ -796,6 +798,10 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
         </Modal>
       )}
 
+      {panel === 'settings' && (
+        <SettingsPanel t={t} onClose={() => setPanel(null)} />
+      )}
+
       {panel === 'support' && (
         <Modal title={t.sayHello} onClose={() => setPanel(null)}>
           <p className="mb-5 text-sm leading-relaxed text-slate-300">{t.supportMsg}</p>
@@ -977,6 +983,166 @@ function CreditRow({ label, value }) {
     <div className="flex flex-col pb-2">
       <span className="text-[10px] uppercase tracking-widest text-slate-400">{label}</span>
       <span className="text-slate-200">{value}</span>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Settings panel (main menu). Reads the shared settings on open and persists
+ * each change immediately via saveSettings/saveMuted. Gameplay-affecting values
+ * are read by the arena when a round starts, so changes apply next practice.
+ * ------------------------------------------------------------------------- */
+function SettingsPanel({ t, onClose }) {
+  const init = loadSettings();
+  const [sfxVolume, setSfxVolume] = useState(init.sfxVolume);
+  const [muted, setMuted] = useState(loadMuted());
+  const [muzzleFlash, setMuzzleFlash] = useState(init.muzzleFlash);
+  const [showGun, setShowGun] = useState(init.showGun);
+  const [targetColor, setTargetColor] = useState(init.targetColor);
+  const [sensitivity, setSensitivity] = useState(init.sensitivity);
+  const [targetSize, setTargetSize] = useState(init.targetSize);
+  const [showPbReference, setShowPbReference] = useState(init.showPbReference);
+
+  const pct = Math.round(sfxVolume * 100);
+
+  return (
+    <Modal title={t.settings} onClose={onClose}>
+      <div className="flex flex-col gap-6">
+        <SettingsSection label={t.settingsAudio}>
+          <SliderRow
+            label={t.sfxVolume}
+            display={`${pct}%`}
+            value={pct}
+            min={0}
+            max={100}
+            step={5}
+            onChange={(v) => { setSfxVolume(v / 100); saveSettings({ sfxVolume: v / 100 }); }}
+          />
+          <ToggleRow
+            label={t.mute}
+            checked={muted}
+            onChange={(v) => { setMuted(v); saveMuted(v); }}
+          />
+        </SettingsSection>
+
+        <SettingsSection label={t.settingsVisual}>
+          <ToggleRow
+            label={t.muzzleFlash}
+            checked={muzzleFlash}
+            onChange={(v) => { setMuzzleFlash(v); saveSettings({ muzzleFlash: v }); }}
+          />
+          <ToggleRow
+            label={t.showGun}
+            checked={showGun}
+            onChange={(v) => { setShowGun(v); saveSettings({ showGun: v }); }}
+          />
+          <div>
+            <p className="mb-2.5 text-[11px] uppercase tracking-widest text-slate-400">{t.sphereColor}</p>
+            <div className="flex flex-wrap gap-2.5">
+              {TARGET_COLORS.map(({ key, hex }) => {
+                const active = targetColor.toLowerCase() === hex.toLowerCase();
+                return (
+                  <button
+                    key={key}
+                    aria-label={key}
+                    aria-pressed={active}
+                    onClick={() => { setTargetColor(hex); saveSettings({ targetColor: hex }); }}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${
+                      active ? 'scale-110 border-white' : 'border-white/20'
+                    }`}
+                    style={{ backgroundColor: hex }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection label={t.settingsGameplay}>
+          <SliderRow
+            label={t.sensitivity}
+            display={sensitivity.toFixed(2)}
+            value={sensitivity}
+            min={0.05}
+            max={1.5}
+            step={0.01}
+            onChange={(v) => { setSensitivity(v); saveSettings({ sensitivity: v }); }}
+          />
+          <SliderRow
+            label={t.targetSize}
+            display={targetSize.toFixed(2)}
+            value={targetSize}
+            min={0.12}
+            max={0.5}
+            step={0.01}
+            onChange={(v) => { setTargetSize(v); saveSettings({ targetSize: v }); }}
+          />
+          <ToggleRow
+            label={t.pbReference}
+            hint={t.pbReferenceHint}
+            checked={showPbReference}
+            onChange={(v) => { setShowPbReference(v); saveSettings({ showPbReference: v }); }}
+          />
+        </SettingsSection>
+
+        <p className="text-center text-[11px] leading-relaxed text-slate-400">{t.settingsHint}</p>
+      </div>
+    </Modal>
+  );
+}
+
+function SettingsSection({ label, children }) {
+  return (
+    <div>
+      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.3em] text-val-red">{label}</p>
+      <div className="flex flex-col gap-4">{children}</div>
+    </div>
+  );
+}
+
+function SliderRow({ label, display, value, min, max, step, onChange }) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[11px] uppercase tracking-widest text-slate-400">{label}</span>
+        <span className="text-xs font-bold tabular-nums text-val-accent">{display}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-[#00e5c0]"
+      />
+    </div>
+  );
+}
+
+function ToggleRow({ label, hint, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <span className="text-sm text-slate-200">{label}</span>
+        {hint && <p className="text-[10px] leading-snug text-slate-500">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-[#00e5c0]' : 'bg-white/15'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-[22px]' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
     </div>
   );
 }

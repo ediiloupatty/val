@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { loadSettings, saveSettings, savePb, getPb } from './settings.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TEXT, MODE_TEXT } from './translations.js';
@@ -67,27 +68,6 @@ const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe', 'tracki
 const RANKED_SIZE_MIN = 0.12;
 const RANKED_SIZE_MAX = 0.35;
 
-/* ---- Settings defaults & loader (module scope — computed once, not per render) ----
- * Keeping these outside the component avoids recreating the object literal and
- * running the localStorage parse on every single re-render.
- * ------------------------------------------------------------------------------------- */
-const SETTINGS_DEFAULTS = {
-  sensitivity: 0.35,
-  crosshairColor: '#00e5c0',
-  crosshairSize: 10,
-  targetSize: 0.28,
-  modeKey: 'micro',
-  lang: 'en',
-};
-
-function loadSettings() {
-  try {
-    return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('vat_settings')) };
-  } catch {
-    return SETTINGS_DEFAULTS;
-  }
-}
-
 /*
  * Valorant sensitivity matcher.
  * Valorant's yaw is a fixed 0.07° of rotation per mouse count, per 1.0 sens.
@@ -111,10 +91,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const runningRef = useRef(false);
 
   // --- Live config (mirrored into a ref so the engine reads fresh values) ---
-  // Settings persist across refreshes via localStorage.
-  // SETTINGS_DEFAULTS and loadSettings() are defined at module scope so they
-  // are never recreated on re-renders. Lazy useState initialisers ensure
-  // localStorage is read only once per mount, not on every render.
+  // Settings persist across refreshes via localStorage (see settings.js).
+  // Lazy useState initialisers ensure localStorage is read only once per mount,
+  // not on every render.
 
   const [sensitivity, setSensitivity] = useState(() => loadSettings().sensitivity);
   const [crosshairColor, setCrosshairColor] = useState(() => loadSettings().crosshairColor);
@@ -152,19 +131,26 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   }, [sensitivity, targetSize, mode, trackingDifficulty, trackingBallSize]);
 
   // Persist settings — debounced 400ms so rapid slider drags don't spam localStorage.
+  // Uses saveSettings (read-merge-write) so it never clobbers QoL keys (sfxVolume,
+  // muzzleFlash, showGun, targetColor, showPbReference) owned by the Settings panel.
   useEffect(() => {
     const id = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          'vat_settings',
-          JSON.stringify({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang })
-        );
-      } catch {
-        /* private mode / quota — settings just won't persist */
-      }
+      saveSettings({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang });
     }, 400);
     return () => clearTimeout(id);
   }, [sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang]);
+
+  // QoL gameplay settings — read once on mount and held in a ref. They're chosen
+  // from the main-menu Settings panel before entering the arena, so reading them
+  // at scene-init time (not live) is exactly the right granularity.
+  const qolRef = useRef(loadSettings());
+  // Live personal-best chase (osu!-style). pbRef.current is the score to beat for
+  // the current mode; pbBeaten flips true the instant the live score passes it.
+  const showPbRef = useRef(qolRef.current.showPbReference);
+  const [pbTarget, setPbTarget] = useState(() => getPb(modeKey));
+  const [pbBeaten, setPbBeaten] = useState(false);
+  const pbTargetRef = useRef(pbTarget);
+  useEffect(() => { pbTargetRef.current = pbTarget; }, [pbTarget]);
 
   // --- Session stats (UI state) ---
   const [isRunning, setIsRunning] = useState(false);
@@ -237,6 +223,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const audioRef = useRef(null);
   const beep = useCallback((freq, duration, type = 'sine', gain = 0.15) => {
     if (mutedRef.current) return;
+    // Scale every SFX by the player's volume setting (0 = silent → skip entirely).
+    const vol = qolRef.current.sfxVolume;
+    if (vol <= 0) return;
+    gain *= vol;
     let ctx = audioRef.current;
     if (!ctx) {
       try {
@@ -337,8 +327,22 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     dir.position.set(5, 12, 8);
     scene.add(dir);
 
+    // QoL settings chosen in the main-menu Settings panel, applied at scene init.
+    const qol = qolRef.current;
+    // Resolve the chosen target colour to a THREE-friendly int (fallback to teal).
+    const targetHex = (() => {
+      const n = parseInt(String(qol.targetColor || '').replace('#', ''), 16);
+      return Number.isFinite(n) ? n : 0x00e5c0;
+    })();
+
     /* ----------------- FPS viewmodel: GLB revolver only ----------------- */
     const weapon = new THREE.Group();
+    // The gun model lives in its own sub-group so "Show Gun" can hide just the
+    // weapon meshes while the muzzle flash (a direct child of weapon) stays
+    // independently toggleable.
+    const gunModel = new THREE.Group();
+    gunModel.visible = qol.showGun;
+    weapon.add(gunModel);
 
     // Muzzle flash (hidden until a shot fires).
     const muzzle = new THREE.Mesh(
@@ -391,7 +395,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         pivot.scale.setScalar(MODEL_TF.fitLength / Math.max(size.x, size.y, size.z));
         pivot.rotation.set(...MODEL_TF.rot);
         pivot.position.set(...MODEL_TF.pos);
-        weapon.add(pivot);
+        gunModel.add(pivot);
       },
       undefined,
       () => {
@@ -405,7 +409,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         slide.position.set(0, 0.035, -0.14);
         const grip = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.13, 0.048), mat);
         grip.position.set(0, -0.06, 0.02);
-        weapon.add(barrel, slide, grip);
+        gunModel.add(barrel, slide, grip);
       }
     );
 
@@ -486,10 +490,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       vigType  = 'fire';
       vigTimer = 0.08; // 80ms
 
-      muzzleTimer = 0.05;
-      muzzle.visible = true;
-      muzzle.rotation.z = Math.random() * Math.PI;
-      muzzleLight.intensity = 2.5;
+      // Muzzle flash — skippable via the "Muzzle Flash" setting.
+      if (qol.muzzleFlash) {
+        muzzleTimer = 0.05;
+        muzzle.visible = true;
+        muzzle.rotation.z = Math.random() * Math.PI;
+        muzzleLight.intensity = 2.5;
+      }
     }
 
     const raycaster = new THREE.Raycaster();
@@ -530,7 +537,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       const r = cfgRef.current.targetSize * sizeScale;
       const geo = getCachedGeo(r);
       const isRed = Math.random() < 0.5;
-      const color = isRed ? 0xff4655 : 0x00e5c0;
+      // Avoid ("red") targets keep their warning colour; standard targets use the
+      // player's chosen sphere colour.
+      const color = isRed ? 0xff4655 : targetHex;
       const mat = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
@@ -1362,6 +1371,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     setAvgRt(0);
     setPopups([]);
     setNewHigh(false);
+    // Refresh the personal-best chase for this fresh round (same mode = same PB).
+    setPbTarget(getPb(modeKey));
+    setPbBeaten(false);
     setTimeLeft(SESSION_SECONDS);
     setHasPlayed(true);
     setTrackingAccuracy(0);
@@ -1381,7 +1393,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
     // Kick off the 3-second countdown. Actual game starts when it finishes.
     setCountdown(3);
-  }, [beep]);
+  }, [beep, modeKey]);
 
   // Drives the 3-2-1 countdown. When it reaches 0, the real session begins.
   useEffect(() => {
@@ -1476,10 +1488,33 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     return () => clearInterval(id);
   }, [isRunning, isLocked, endGame]);
 
+  /* ---- Per-mode personal-best chase (osu!-style) ---------------------------- */
+  // Each mode keeps its own record. Reset the on-screen target whenever the mode
+  // changes so the HUD always shows the right number to beat.
+  useEffect(() => {
+    setPbTarget(getPb(modeKey));
+    setPbBeaten(false);
+  }, [modeKey]);
+
+  // Celebrate the instant the live score passes the personal best for this mode.
+  useEffect(() => {
+    if (!isRunning || pbBeaten) return;
+    const target = pbTargetRef.current;
+    if (target > 0 && score > target) {
+      setPbBeaten(true);
+      beep(1320, 0.16, 'triangle', 0.16); // bright chime — "record broken!"
+    }
+  }, [score, isRunning, pbBeaten, beep]);
+
   /* ------------- Persist personal bests when a session finishes ------------- */
   useEffect(() => {
     if (!hasPlayed || timeLeft !== 0) return;
     setNewHigh(score > best.score);
+    // Record the per-mode personal best (local), then refresh the chase target.
+    if (score > 0) {
+      savePb(modeKey, score);
+      setPbTarget(getPb(modeKey));
+    }
     setBest((prev) => ({
       score: Math.max(prev.score, score),
       accuracy: Math.max(prev.accuracy, accuracy),
@@ -1953,6 +1988,28 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
             <span className={timeLeft <= 10 ? 'text-val-red' : 'text-white'}>
               {timeLeft}s
             </span>
+          </div>
+        )}
+
+        {/* osu!-style personal-best chase — the record to beat for this mode, shown
+            on the side. Flips to a celebratory state the moment it's surpassed. */}
+        {isRunning && showPbRef.current && pbTarget > 0 && (
+          <div className="pointer-events-none absolute right-5 top-1/2 z-10 -translate-y-1/2 text-right md:right-8">
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">
+              {pbBeaten ? `🔥 ${t.pbBeaten}` : t.pbChase}
+            </p>
+            <p
+              className={`text-3xl font-black tabular-nums transition-colors md:text-4xl ${
+                pbBeaten ? 'animate-pulse text-val-accent' : 'text-white/70'
+              }`}
+            >
+              {pbTarget}
+            </p>
+            {pbBeaten && (
+              <p className="text-sm font-black tabular-nums text-val-accent">
+                +{score - pbTarget}
+              </p>
+            )}
           </div>
         )}
       </main>
