@@ -39,7 +39,7 @@ const NOTICE_DISMISS_KEY = 'vat_notice_dismissed';
 // per contributor; `url` and `note` are optional.
 const CONTRIBUTORS = [
   { name: 'Conradium', url: 'https://github.com/Conradium', note: 'Security report' },
-  { name: 'Stephen', note: 'Gameplay exploit report' },
+  { name: 'Stephen', url: 'https://github.com/Stephengans', note: 'Gameplay exploit report' },
 ];
 
 // Contact / support destinations — edit to your own links.
