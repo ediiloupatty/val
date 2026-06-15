@@ -53,8 +53,13 @@ const MODES = {
     // spreadY 0 → all targets sit on one flat head-height line (no high/low).
     count: 3, spreadX: 2.6, spreadY: 0, centerY: 0.1, sizeScale: 1, reflex: false, counterStrafe: true,
   },
+  tracking: {
+    name: 'Tracking',
+    desc: 'Keep your crosshair on the moving ball. No clicking — score for time on target.',
+    count: 1, spreadX: 2.0, spreadY: 0.5, centerY: 0.3, sizeScale: 1.4, reflex: false, tracking: true,
+  },
 };
-const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe'];
+const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe', 'tracking'];
 
 // Standard target-size band for the per-mode leaderboard (must match worker.js
 // RANKED_SIZE_MIN/MAX). Outside this, scores still count on the "All" board but
@@ -133,10 +138,18 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const t = TEXT[lang] || TEXT.en;
   const modeText = (MODE_TEXT[lang] || MODE_TEXT.en)[modeKey] || MODE_TEXT.en.micro;
 
-  const cfgRef = useRef({ sensitivity, targetSize, mode });
+  const [trackingDifficulty, setTrackingDifficulty] = useState('easy');
+  const [trackingBallSize, setTrackingBallSize] = useState('medium');
+  const [trackingAccuracy, setTrackingAccuracy] = useState(0);
+  const [trackingAvgSwitch, setTrackingAvgSwitch] = useState(0);
+  const [trackingComboDisplay, setTrackingComboDisplay] = useState(1.0);
+  const [countdown, setCountdown] = useState(null); // null | 3 | 2 | 1
+  const trackingToneRef = useRef(null); // { osc, gain, ctx }
+
+  const cfgRef = useRef({ sensitivity, targetSize, mode, trackingDifficulty, trackingBallSize });
   useEffect(() => {
-    cfgRef.current = { sensitivity, targetSize, mode };
-  }, [sensitivity, targetSize, mode]);
+    cfgRef.current = { sensitivity, targetSize, mode, trackingDifficulty, trackingBallSize };
+  }, [sensitivity, targetSize, mode, trackingDifficulty, trackingBallSize]);
 
   // Persist settings — debounced 400ms so rapid slider drags don't spam localStorage.
   useEffect(() => {
@@ -408,6 +421,23 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     let vigTimer = 0; // seconds remaining for flash
     let vigType = 'fire'; // 'fire' | 'hit'
     const dyingTargets = [];
+    // Tracking mode — difficulty configs, per-frame accumulators, combo, and stats
+    const TRACKING_DIFF = {
+      easy:   { speedMin: 1.2, speedMax: 2.2, wanderMin: 0.8,  wanderMax: 1.8, curve: 0,   zOscillate: false, scoreMulti: 1.0 },
+      medium: { speedMin: 2.5, speedMax: 4.0, wanderMin: 1.4,  wanderMax: 2.8, curve: 0,   zOscillate: false, scoreMulti: 1.5 },
+      hard:   { speedMin: 4.0, speedMax: 6.5, wanderMin: 1.4,  wanderMax: 2.8, curve: 1.0, zOscillate: true,  scoreMulti: 2.5 },
+    };
+    const TRACKING_SIZE_MULTI  = { small: 2.5, medium: 1.5, large: 1.0 };
+    const TRACKING_BALL_SCALE  = { small: 0.7, medium: 1.1, large: 1.8 };
+    let trackingScoreAccum   = 0;
+    let trackingScoreFlush   = 0;
+    let trackingCombo        = 1.0;
+    let trackingTimeOn       = 0;
+    let trackingTimeTotal    = 0;
+    let trackingStatFlush    = 0;
+    let trackingWasOn        = false;
+    let trackingSwitchOffTime = -1;
+    let trackingSwitchTimes  = [];
 
     // --- Hit flash point light (reused across hits) ---------------------------
     const hitLight = new THREE.PointLight(0xffffff, 0, 7);
@@ -494,7 +524,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
     function spawnTarget() {
       const mode = cfgRef.current.mode;
-      const r = cfgRef.current.targetSize * mode.sizeScale;
+      const sizeScale = mode.tracking
+        ? (TRACKING_BALL_SCALE[cfgRef.current.trackingBallSize] ?? mode.sizeScale)
+        : mode.sizeScale;
+      const r = cfgRef.current.targetSize * sizeScale;
       const geo = getCachedGeo(r);
       const isRed = Math.random() < 0.5;
       const color = isRed ? 0xff4655 : 0x00e5c0;
@@ -557,6 +590,28 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       m.userData.spawnTime = performance.now();
       m.userData.spawnAge  = 0; // drives the pop-in animation in animate()
       m.scale.setScalar(0);    // start invisible — animate() scales to 1
+
+      if (mode.tracking) {
+        // Spawn at the crosshair's world position so the player starts at 100% accuracy.
+        raycaster.setFromCamera(CENTER, camera);
+        const spawnPos = new THREE.Vector3();
+        const tRay = TARGET_DISTANCE / raycaster.ray.direction.z;
+        raycaster.ray.at(tRay, spawnPos);
+        spawnPos.x = Math.max(-4.0, Math.min(4.0, spawnPos.x));
+        spawnPos.y = Math.max(FLOOR_Y + r + 0.2, Math.min(2.2, spawnPos.y));
+        m.position.set(spawnPos.x, spawnPos.y, TARGET_DISTANCE);
+
+        m.userData.health = 100;
+        m.userData.maxHealth = 100;
+        m.userData.vx = 0;
+        m.userData.vy = 0;
+        m.userData.easeIn = 0.4; // hold at crosshair for 0.4s, then begin wander
+        m.userData.wanderTimer = 999;
+        m.userData.curveDir = Math.random() < 0.5 ? 1 : -1; // curve turn direction for hard
+        m.userData.zPhase = Math.random() * Math.PI * 2;     // random start phase for z-oscillation
+        m.userData.zSpeed = 0.4 + Math.random() * 0.4;       // 0.4–0.8 rad/s depth pulse
+      }
+
       scene.add(m);
       targets.push(m);
     }
@@ -665,6 +720,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         requestLock();
         return;
       }
+      // Tracking mode has no shooting — just hover to score.
+      if (cfgRef.current.mode.tracking) return;
       fireViewmodel(); // recoil + muzzle flash on every shot
       // Counter-Strafe: firing while moving scatters the shot away from the
       // crosshair (accurate only once you've stopped).
@@ -842,6 +899,157 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         if (p >= 1) delete tgt.userData.spawnAge;
       }
 
+      // --- Tracking mode: move ball & score for time on target ---
+      if (curMode.tracking && runningRef.current && isCanvasLocked) {
+        const BOUND_X = 4.0;
+        const BOUND_Y_TOP = 2.2;
+        const BOUND_Y_BOT = FLOOR_Y + 0.5;
+
+        const diff = cfgRef.current.trackingDifficulty || 'easy';
+        const D = TRACKING_DIFF[diff];
+        const sizeMod = TRACKING_SIZE_MULTI[cfgRef.current.trackingBallSize || 'medium'];
+
+        trackingTimeTotal += dt;
+
+        raycaster.setFromCamera(CENTER, camera);
+
+        let toneFreq = 220;
+        let toneOn = false;
+
+        for (const tgt of targets) {
+          if (tgt.userData.dying || tgt.userData.spawnAge !== undefined) continue;
+
+          // Ease-in phase: ball stays at spawn (crosshair) position before wandering
+          if (tgt.userData.easeIn > 0) {
+            tgt.userData.easeIn = Math.max(0, tgt.userData.easeIn - dt);
+            if (tgt.userData.easeIn === 0) {
+              const angle = Math.random() * Math.PI * 2;
+              const speed = D.speedMin + Math.random() * (D.speedMax - D.speedMin);
+              tgt.userData.vx = Math.cos(angle) * speed;
+              tgt.userData.vy = Math.sin(angle) * speed;
+              tgt.userData.wanderTimer = D.wanderMin + Math.random() * (D.wanderMax - D.wanderMin);
+            }
+          } else {
+            // Hard mode: rotate velocity vector for curved/parabolic arcs
+            if (D.curve > 0) {
+              const a = D.curve * dt * tgt.userData.curveDir;
+              const c = Math.cos(a), s = Math.sin(a);
+              const vx = tgt.userData.vx, vy = tgt.userData.vy;
+              tgt.userData.vx = vx * c - vy * s;
+              tgt.userData.vy = vx * s + vy * c;
+            }
+
+            // Wander: periodically snap to a new direction
+            tgt.userData.wanderTimer -= dt;
+            if (tgt.userData.wanderTimer <= 0) {
+              const angle = Math.random() * Math.PI * 2;
+              const speed = D.speedMin + Math.random() * (D.speedMax - D.speedMin);
+              tgt.userData.vx = Math.cos(angle) * speed;
+              tgt.userData.vy = Math.sin(angle) * speed;
+              tgt.userData.wanderTimer = D.wanderMin + Math.random() * (D.wanderMax - D.wanderMin);
+              // Flip curve direction on each wander reset for varied arcs
+              if (D.curve > 0) tgt.userData.curveDir *= Math.random() < 0.5 ? -1 : 1;
+            }
+
+            // Move and bounce off visible bounds
+            tgt.position.x += tgt.userData.vx * dt;
+            tgt.position.y += tgt.userData.vy * dt;
+            if (tgt.position.x > BOUND_X)    { tgt.position.x = BOUND_X;    tgt.userData.vx = -Math.abs(tgt.userData.vx); }
+            if (tgt.position.x < -BOUND_X)   { tgt.position.x = -BOUND_X;   tgt.userData.vx =  Math.abs(tgt.userData.vx); }
+            if (tgt.position.y > BOUND_Y_TOP) { tgt.position.y = BOUND_Y_TOP; tgt.userData.vy = -Math.abs(tgt.userData.vy); }
+            if (tgt.position.y < BOUND_Y_BOT) { tgt.position.y = BOUND_Y_BOT; tgt.userData.vy =  Math.abs(tgt.userData.vy); }
+
+            // Hard mode: z-axis pulse (ball drifts closer and further)
+            if (D.zOscillate) {
+              tgt.userData.zPhase += dt * tgt.userData.zSpeed;
+              tgt.position.z = TARGET_DISTANCE + Math.sin(tgt.userData.zPhase) * 1.8;
+            }
+          }
+
+          // Check if crosshair is on this target
+          _hitSphere.set(tgt.position, hitRadii.get(tgt) || tgt.userData.radius);
+          const onTarget = !!raycaster.ray.intersectSphere(_hitSphere, _hitPoint);
+
+          // Track re-acquisition timing (time from losing target to getting it back)
+          const prevOnTarget = trackingWasOn;
+          trackingWasOn = onTarget;
+          if (onTarget && !prevOnTarget && trackingSwitchOffTime > 0) {
+            trackingSwitchTimes.push(performance.now() - trackingSwitchOffTime);
+            trackingSwitchOffTime = -1;
+          }
+          if (!onTarget && prevOnTarget) {
+            trackingSwitchOffTime = performance.now();
+          }
+
+          if (onTarget) {
+            trackingTimeOn += dt;
+            // Combo builds while on target (max 4x over ~6 seconds), resets instantly on miss
+            trackingCombo = Math.min(trackingCombo + 0.5 * dt, 4.0);
+
+            // Drain health (100 HP over 5 seconds = 20/sec)
+            tgt.userData.health = Math.max(0, tgt.userData.health - 20 * dt);
+            const healthPct = tgt.userData.health / tgt.userData.maxHealth;
+
+            // Color shifts green → yellow → red as health depletes
+            const hue = healthPct * 0.35;
+            const col = new THREE.Color().setHSL(hue, 1.0, 0.55);
+            tgt.material.color.set(col);
+            tgt.material.emissive.set(col);
+            tgt.material.emissiveIntensity = 1.3;
+
+            // Pitch rises 220→880 Hz as health drains (charging/filling feel)
+            toneFreq = 220 + (1 - healthPct) * 660;
+            toneOn = true;
+
+            // Score scales with difficulty, ball size, and current combo
+            trackingScoreAccum += 100 * dt * D.scoreMulti * sizeMod * trackingCombo;
+
+            if (tgt.userData.health <= 0) {
+              const killColor = tgt.material.color.getHex();
+              spawnHitParticles(tgt.position, killColor);
+              hitLight.color.setHex(killColor);
+              hitLight.position.copy(tgt.position);
+              hitLight.intensity = 4;
+              hitLightTimer = 0.12;
+              tgt.userData.dying = true;
+              dyingTargets.push({ mesh: tgt, age: 0 });
+              targets.splice(targets.indexOf(tgt), 1);
+              engine.current.onTrackingKill();
+              fillTargets();
+            }
+          } else {
+            // Lost tracking — reset combo and restore base emissive
+            trackingCombo = 1.0;
+            tgt.material.emissiveIntensity = 0.5;
+          }
+        }
+
+        // Update continuous tracking tone (called once per frame, zero re-renders)
+        engine.current.setTrackingTone(toneFreq, toneOn);
+
+        // Flush score to React at ~10Hz
+        trackingScoreFlush += dt;
+        if (trackingScoreFlush >= 0.1) {
+          trackingScoreFlush = 0;
+          const pts = Math.floor(trackingScoreAccum);
+          if (pts >= 1) {
+            trackingScoreAccum -= pts;
+            engine.current.onTrackingScore(pts);
+          }
+        }
+
+        // Flush accuracy/combo/switch stats to React at ~5Hz
+        trackingStatFlush += dt;
+        if (trackingStatFlush >= 0.2) {
+          trackingStatFlush = 0;
+          const acc = trackingTimeTotal > 0 ? (trackingTimeOn / trackingTimeTotal) * 100 : 0;
+          const avgSwitch = trackingSwitchTimes.length > 0
+            ? trackingSwitchTimes.reduce((a, b) => a + b, 0) / trackingSwitchTimes.length
+            : 0;
+          engine.current.onTrackingStats(acc, avgSwitch, trackingCombo);
+        }
+      }
+
       // --- Dying target pop animation ---
       for (let i = dyingTargets.length - 1; i >= 0; i--) {
         const dtg = dyingTargets[i];
@@ -954,11 +1162,22 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         camera.position.set(0, 0, 0);
         strafeVel = 0; moveLeft = false; moveRight = false; lastMoving = false;
       },
-      onHit:      () => {},
-      onMiss:     () => {},
-      setLocked:  () => {},
-      onFps:      () => {},
-      onMoveState:() => {},
+      onHit:           () => {},
+      onMiss:          () => {},
+      setLocked:       () => {},
+      onFps:           () => {},
+      onMoveState:     () => {},
+      onTrackingScore: () => {},
+      onTrackingKill:  () => {},
+      onTrackingStats: () => {},
+      setTrackingTone: () => {},
+      stopTrackingTone: () => {},
+      resetTracking: () => {
+        trackingScoreAccum = 0; trackingScoreFlush = 0;
+        trackingCombo = 1.0;
+        trackingTimeOn = 0; trackingTimeTotal = 0; trackingStatFlush = 0;
+        trackingWasOn = false; trackingSwitchOffTime = -1; trackingSwitchTimes.length = 0;
+      },
       // Bloom & vignette are driven by the rAF loop, not React state.
       onBloom:    () => {},
       onVig:      () => {},
@@ -1048,8 +1267,59 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       setIsLocked(locked);
       if (!locked) setIsMoving(false);
     };
-    engine.current.onFps      = (v) => setFps(v);
-    engine.current.onMoveState= (m) => setIsMoving(m);
+    engine.current.onFps           = (v) => setFps(v);
+    engine.current.onMoveState     = (m) => setIsMoving(m);
+    engine.current.onTrackingScore = (pts) => setScore((v) => v + pts);
+    engine.current.onTrackingKill  = () => {
+      hitSound();
+      setHits((h) => h + 1);
+      setScore((v) => v + 100);
+      addPopup('+100', '#ff4655');
+    };
+    engine.current.onTrackingStats = (acc, avgSwitchMs, combo) => {
+      setTrackingAccuracy(acc);
+      setTrackingAvgSwitch(avgSwitchMs);
+      setTrackingComboDisplay(combo);
+    };
+
+    engine.current.setTrackingTone = (freq, isOn) => {
+      if (mutedRef.current) {
+        if (trackingToneRef.current) {
+          trackingToneRef.current.gain.gain.setTargetAtTime(0, trackingToneRef.current.ctx.currentTime, 0.02);
+        }
+        return;
+      }
+      let ctx = audioRef.current;
+      if (!ctx) {
+        try { ctx = new (window.AudioContext || window.webkitAudioContext)(); audioRef.current = ctx; } catch { return; }
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+      if (!trackingToneRef.current) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.value = 0;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        trackingToneRef.current = { osc, gain, ctx };
+      }
+      const tone = trackingToneRef.current;
+      tone.osc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.05);
+      tone.gain.gain.setTargetAtTime(isOn ? 0.06 : 0, ctx.currentTime, isOn ? 0.03 : 0.06);
+    };
+
+    engine.current.stopTrackingTone = () => {
+      if (trackingToneRef.current) {
+        try {
+          const { osc, gain, ctx } = trackingToneRef.current;
+          gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+          setTimeout(() => { try { osc.stop(); } catch {} trackingToneRef.current = null; }, 300);
+        } catch { trackingToneRef.current = null; }
+      }
+    };
+
     // Bloom: write directly to a ref — Crosshair reads it on each render cycle
     engine.current.onBloom    = (px) => { bloomRef.current = px; };
     // Vignette: write directly to DOM style, zero React state
@@ -1060,6 +1330,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           `inset 0 0 120px 40px rgba(${color},${opacity})`;
       }
     };
+
+    return () => {
+      if (trackingToneRef.current) {
+        try { trackingToneRef.current.osc.stop(); } catch {}
+        trackingToneRef.current = null;
+      }
+    };
   }, [hitSound, missSound, addPopup]);
 
   /* ------------------------------ Game control ------------------------------ */
@@ -1067,6 +1344,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     runningRef.current = false;
     setIsRunning(false);
     setIsMoving(false);
+    setCountdown(null);
+    engine.current?.stopTrackingTone?.();
     if (document.pointerLockElement) document.exitPointerLock();
     engine.current?.clearTargets();
     try { localStorage.removeItem('vat_session_backup'); } catch { /* ignore */ }
@@ -1085,22 +1364,45 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     setNewHigh(false);
     setTimeLeft(SESSION_SECONDS);
     setHasPlayed(true);
+    setTrackingAccuracy(0);
+    setTrackingAvgSwitch(0);
+    setTrackingComboDisplay(1.0);
+    engine.current.resetTracking?.();
 
     engine.current.resetView();
     engine.current.clearTargets();
-    engine.current.fillTargets();
+    engine.current.fillTargets(); // spawn targets early so player sees them during countdown
 
-    runningRef.current = true;
-    setIsRunning(true);
-    engine.current.requestLock(); // button click is a valid user gesture
-
-    // Ask the backend for a fresh signed token for this round (used to authorize
-    // the score submission when the round ends).
-    onRoundStart?.();
+    // Must request pointer lock synchronously inside the user gesture.
+    engine.current.requestLock();
 
     // Warm up audio context on the gesture.
     beep(0.0001, 0.01);
-  }, [beep, onRoundStart]);
+
+    // Kick off the 3-second countdown. Actual game starts when it finishes.
+    setCountdown(3);
+  }, [beep]);
+
+  // Drives the 3-2-1 countdown. When it reaches 0, the real session begins.
+  useEffect(() => {
+    if (countdown === null) return;
+    // Tick sound: escalating pitch so the last beat feels punchy
+    beep(countdown === 1 ? 660 : 440, 0.07, 'sine', 0.1);
+    const id = setTimeout(() => {
+      if (countdown <= 1) {
+        setCountdown(null);
+        eventLogRef.current = { hits: [], misses: 0, startedAt: performance.now() };
+        runningRef.current = true;
+        setIsRunning(true);
+        onRoundStart?.();
+        // "GO!" accent beep
+        beep(880, 0.12, 'sine', 0.13);
+      } else {
+        setCountdown((c) => c - 1);
+      }
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [countdown, beep, onRoundStart]);
 
   const reset = useCallback(() => {
     endGame();
@@ -1184,9 +1486,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       // Best split = fastest (lowest) average; ignore sessions with <2 hits.
       split: avgRt > 0 ? (prev.split ? Math.min(prev.split, avgRt) : avgRt) : prev.split,
     }));
-    // Log this session to the weekly leaderboard (skip empty/idle sessions).
-    // Include the gameplay log so the backend can re-derive and verify the score.
-    if (score > 0) {
+    // Log this session to the weekly leaderboard (skip empty/idle sessions and
+    // tracking mode, which uses time-based scoring incompatible with hit-log verification).
+    if (score > 0 && !mode.tracking) {
       const ev = eventLogRef.current;
       onSession?.({
         score,
@@ -1334,6 +1636,55 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           </div>
         )}
 
+        {/* Tracking mode settings + tip */}
+        {modeKey === 'tracking' && (
+          <div className="space-y-2 rounded-2xl border border-[#00e5c0]/20 bg-[#00e5c0]/5 px-4 py-3">
+            {/* Difficulty selector */}
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-widest text-slate-500">{t.difficulty}</p>
+              <div className="flex gap-1">
+                {['easy', 'medium', 'hard'].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setTrackingDifficulty(d)}
+                    className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      trackingDifficulty === d
+                        ? 'bg-[#00e5c0] text-[#16212b]'
+                        : 'bg-[#16212b]/60 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {t[d]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Ball size selector */}
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-widest text-slate-500">{t.ballSize}</p>
+              <div className="flex gap-1">
+                {['small', 'medium', 'large'].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setTrackingBallSize(s)}
+                    className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      trackingBallSize === s
+                        ? 'bg-[#00e5c0] text-[#16212b]'
+                        : 'bg-[#16212b]/60 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {s === 'medium' ? t.medium : s === 'small' ? t.small : t.large}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Tip text */}
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              <span className="font-bold text-[#00e5c0]">Tracking · </span>
+              {t.trackingTip}
+            </p>
+          </div>
+        )}
+
         {/* Timer */}
         <div className="rounded-2xl bg-white/5 p-4 text-center">
           <p className="text-[10px] uppercase tracking-widest text-slate-400">
@@ -1351,14 +1702,25 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         {/* Stats grid */}
         <div className="grid grid-cols-2 gap-2">
           <Stat label={t.score} value={score} accent />
-          <Stat label={t.accuracy} value={`${accuracy.toFixed(1)}%`} />
-          <Stat label={t.hits} value={hits} good />
-          <Stat label={t.misses} value={misses} bad />
-          <Stat
-            label={mode.reflex ? t.avgReaction : t.avgSplit}
-            value={`${avgRt ? Math.round(avgRt) : 0} ms`}
-            wide
-          />
+          {mode.tracking ? (
+            <>
+              <Stat label={t.kills} value={hits} good />
+              <Stat label={t.onTargetAcc} value={`${trackingAccuracy.toFixed(1)}%`} />
+              <Stat label={t.combo} value={`${trackingComboDisplay.toFixed(1)}x`} accent />
+              <Stat label={t.avgReacquire} value={trackingAvgSwitch > 0 ? `${Math.round(trackingAvgSwitch)} ms` : '—'} wide />
+            </>
+          ) : (
+            <>
+              <Stat label={t.accuracy} value={`${accuracy.toFixed(1)}%`} />
+              <Stat label={t.hits} value={hits} good />
+              <Stat label={t.misses} value={misses} bad />
+              <Stat
+                label={mode.reflex ? t.avgReaction : t.avgSplit}
+                value={`${avgRt ? Math.round(avgRt) : 0} ms`}
+                wide
+              />
+            </>
+          )}
           <Stat label={t.bestScore} value={best.score} accent wide />
         </div>
 
@@ -1437,7 +1799,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         </div>
 
         <p className="mt-auto text-center text-[10px] leading-relaxed text-slate-500">
-          {t.tip}
+          {mode.tracking ? t.trackingArenaHint : t.tip}
         </p>
       </aside>
 
@@ -1516,8 +1878,22 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           ))}
         </div>
 
+        {/* 3-2-1 countdown overlay */}
+        {countdown !== null && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <style>{`@keyframes cdPop{from{transform:scale(1.6);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
+            <span
+              key={countdown}
+              className="select-none text-[9rem] font-black leading-none text-white tabular-nums"
+              style={{ animation: 'cdPop 0.3s ease-out', textShadow: '0 0 60px rgba(0,229,192,0.7)' }}
+            >
+              {countdown}
+            </span>
+          </div>
+        )}
+
         {/* Idle / paused overlays */}
-        {!isRunning && (
+        {!isRunning && countdown === null && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 transition-all">
             <div className="pointer-events-auto text-center">
               {hasPlayed && timeLeft === 0 ? (
@@ -1534,6 +1910,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
                   onAgain={startPractice}
                   name={name}
                   setName={setName}
+                  isTracking={mode.tracking}
+                  trackingAccuracy={trackingAccuracy}
+                  trackingAvgSwitch={trackingAvgSwitch}
                 />
               ) : (
                 <>
@@ -1568,7 +1947,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         {isRunning && (
           <div className="pointer-events-none absolute left-1/2 top-5 flex -translate-x-1/2 gap-8 rounded-full border border-white/10 bg-black/40 px-6 py-2.5 text-sm font-bold tabular-nums shadow-md">
             <span className="text-val-accent">{score}</span>
-            <span className="text-slate-300">{accuracy.toFixed(0)}%</span>
+            <span className="text-slate-300">
+              {mode.tracking ? `${trackingComboDisplay.toFixed(1)}x` : `${accuracy.toFixed(0)}%`}
+            </span>
             <span className={timeLeft <= 10 ? 'text-val-red' : 'text-white'}>
               {timeLeft}s
             </span>
@@ -1693,7 +2074,7 @@ function Crosshair({ color, size, moving, bloomRef }) {
   );
 }
 
-function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t, splitLabel, onAgain, name, setName }) {
+function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t, splitLabel, onAgain, name, setName, isTracking, trackingAccuracy, trackingAvgSwitch }) {
   const [tempName, setTempName] = React.useState('');
   const [saved, setSaved] = React.useState(false);
   const showPrompt = name === 'Agent' && !saved;
@@ -1730,10 +2111,20 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
         {t.best} {best.score}
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3 text-left text-sm">
-        <SummaryRow label={t.accuracy} value={`${accuracy.toFixed(1)}%`} />
-        <SummaryRow label={splitLabel || t.avgSplit} value={`${avgRt ? Math.round(avgRt) : 0} ms`} />
-        <SummaryRow label={t.hits} value={hits} />
-        <SummaryRow label={t.misses} value={misses} />
+        {isTracking ? (
+          <>
+            <SummaryRow label={t.kills} value={hits} />
+            <SummaryRow label={t.onTargetAcc} value={`${(trackingAccuracy ?? 0).toFixed(1)}%`} />
+            <SummaryRow label={t.avgReacquire} value={trackingAvgSwitch > 0 ? `${Math.round(trackingAvgSwitch)} ms` : '—'} />
+          </>
+        ) : (
+          <>
+            <SummaryRow label={t.accuracy} value={`${accuracy.toFixed(1)}%`} />
+            <SummaryRow label={splitLabel || t.avgSplit} value={`${avgRt ? Math.round(avgRt) : 0} ms`} />
+            <SummaryRow label={t.hits} value={hits} />
+            <SummaryRow label={t.misses} value={misses} />
+          </>
+        )}
       </div>
 
       {/* Name prompt — shown only when name is still the default "Agent" */}
