@@ -144,8 +144,8 @@ export default function App() {
   const handleSetBest = (updater) => {
     setBest((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveProfile(deviceId, name, next);
-      writeProfileCache(name, next);
+      saveProfile(deviceId, nameRef.current, next);
+      writeProfileCache(nameRef.current, next);
       return next;
     });
   };
@@ -154,6 +154,11 @@ export default function App() {
   // the profile cache, even if best updated since the last render.
   const bestRef = useRef(best);
   useEffect(() => { bestRef.current = best; }, [best]);
+
+  // Mirror name into a ref so handleSetBest always writes the current name
+  // to the profile, even if name changed since the last render.
+  const nameRef = useRef(name);
+  useEffect(() => { nameRef.current = name; }, [name]);
 
   // Signed session token, requested when a round starts and redeemed once when
   // the score is submitted. Kept in a ref so it survives re-renders mid-round.

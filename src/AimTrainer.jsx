@@ -1477,6 +1477,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   // engine ref this same tick so fillTargets() uses it, and keeps
   // requestPointerLock() inside the originating click gesture.
   const applyModeChange = (key) => {
+    engine.current?.stopTrackingTone?.(); // stop any lingering tracking oscillator
     setModeKey(key);
     cfgRef.current = { ...cfgRef.current, mode: MODES[key] };
     startPractice();
