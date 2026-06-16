@@ -95,6 +95,14 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
   const targetRef = useRef({ x: 0.5, y: 0.5 }); // raw mouse (0-1)
   const curRef    = useRef({ x: 0.5, y: 0.5 }); // lerped position
 
+  // Short-lived rank cache so leaderboard and share panel share one fetch.
+  // { data: {rank,score}|null, ts: number }
+  const rankCacheRef = useRef(null);
+  const RANK_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+  // Ref for the mode-filter dropdown so we can detect outside clicks.
+  const lbModeRef = useRef(null);
+
   useEffect(() => {
     const onMouseMove = (e) => {
       targetRef.current = {
@@ -112,11 +120,14 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     const tick = () => {
       const c = curRef.current;
       const t = targetRef.current;
-      // Exponential lerp toward target
-      c.x += (t.x - c.x) * LERP;
-      c.y += (t.y - c.y) * LERP;
+      const dx = (t.x - c.x) * LERP;
+      const dy = (t.y - c.y) * LERP;
+      c.x += dx;
+      c.y += dy;
 
-      if (bgRef.current) {
+      // Only write to the DOM when the position is still moving — skips the
+      // style recalc on every frame once the cursor has been still long enough.
+      if (bgRef.current && (Math.abs(dx) > 0.00005 || Math.abs(dy) > 0.00005)) {
         const tx = (c.x - 0.5) * -MAX_X * 2;
         const ty = (c.y - 0.5) * -MAX_Y * 2;
         bgRef.current.style.transform = `scale(1.12) translate(${tx}px, ${ty}px)`;
@@ -133,6 +144,18 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     };
   }, []);
   // -----------------------------------------------------------------------
+
+  // Close the mode dropdown when the user clicks anywhere outside it.
+  useEffect(() => {
+    if (!lbModeOpen) return;
+    const handler = (e) => {
+      if (lbModeRef.current && !lbModeRef.current.contains(e.target)) {
+        setLbModeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [lbModeOpen]);
 
   useEffect(() => { setTempName(name); }, [name]);
 
@@ -156,8 +179,12 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     if (panel !== 'leaderboard') return;
     const cleanup = loadLeaderboard();
     // Weekly rank is fetched separately so we can show a "you" row when the
-    // player sits outside the visible top 10.
-    if (deviceId) fetchRank(deviceId).then(setMyRankInfo);
+    // player sits outside the visible top 10. Result is cached so the share
+    // panel can reuse it without a second network call.
+    if (deviceId) fetchRank(deviceId).then((info) => {
+      setMyRankInfo(info);
+      rankCacheRef.current = { data: info, ts: Date.now() };
+    });
     return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panel, lbRange, lbMode]);
@@ -201,11 +228,18 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
     });
   };
 
-  // Open the share panel: fetch the weekly rank, then preview the current template.
+  // Open the share panel: reuse the cached rank if fresh, otherwise fetch once.
   const handleOpenShare = async () => {
     try {
       setSharing(true);
-      const info = deviceId ? await fetchRank(deviceId) : null;
+      const cached = rankCacheRef.current;
+      let info;
+      if (cached && Date.now() - cached.ts < RANK_CACHE_TTL) {
+        info = cached.data;
+      } else {
+        info = deviceId ? await fetchRank(deviceId) : null;
+        rankCacheRef.current = { data: info, ts: Date.now() };
+      }
       const r = info?.rank ?? null;
       setRank(r);
       await renderCard(template, showRank ? r : null);
@@ -663,7 +697,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <div className="relative">
+              <div className="relative" ref={lbModeRef}>
                 <button
                   onClick={() => setLbModeOpen((o) => !o)}
                   className="flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition-colors hover:text-white"

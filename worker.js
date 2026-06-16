@@ -636,7 +636,7 @@ export default {
         const score = row ? Number(row.score) : null;
         return new Response(
           JSON.stringify({ success: true, rank, score }),
-          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          { headers: { "Content-Type": "application/json", "Cache-Control": "private, max-age=30", ...corsHeaders } }
         );
       } catch (err) {
         console.error("rank error:", err);
@@ -690,7 +690,7 @@ export default {
 
         return new Response(
           JSON.stringify({ success: true, data }),
-          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=30", ...corsHeaders } }
         );
       } catch (err) {
         console.error("leaderboard error:", err);
@@ -777,7 +777,7 @@ export default {
         }));
         return new Response(
           JSON.stringify({ success: true, data }),
-          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=60", ...corsHeaders } }
         );
       } catch (err) {
         console.error("donations error:", err);
