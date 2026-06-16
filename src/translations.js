@@ -140,6 +140,7 @@ export const TEXT = {
     avgReacquire: 'Avg Re-acquire',
     combo: 'Combo',
     scoreSubmitError: 'Score could not be saved to the leaderboard. Check your connection.',
+    sessionTokenWarning: 'Could not get a session token — score may not save to leaderboard.',
     sessionBackupMsg: 'Last session ({score} pts) ended unexpectedly and was not saved.',
     mobileMsg1:
       "This trainer needs a mouse and the Pointer Lock API, which aren't available on phones or tablets.",
@@ -286,6 +287,7 @@ export const TEXT = {
     avgReacquire: 'Rata Akuisisi',
     combo: 'Kombo',
     scoreSubmitError: 'Skor gagal tersimpan ke leaderboard. Periksa koneksimu.',
+    sessionTokenWarning: 'Token sesi gagal didapat — skor mungkin tidak tersimpan ke leaderboard.',
     sessionBackupMsg: 'Sesi terakhir ({score} poin) tidak tersimpan karena browser tertutup.',
     mobileMsg1:
       'Trainer ini butuh mouse dan Pointer Lock API, yang tidak tersedia di HP atau tablet.',

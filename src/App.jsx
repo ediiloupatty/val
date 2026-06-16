@@ -159,14 +159,25 @@ export default function App() {
   // the score is submitted. Kept in a ref so it survives re-renders mid-round.
   const sessionTokenRef = useRef(null);
 
-  // Each round starts with a fresh token request (the 40s round gives it ample
-  // time to resolve before the score is submitted).
+  // Each round starts with a fresh token request (the 40s round gives ample
+  // time to resolve before the score is submitted). Retries once on failure
+  // and shows a warning toast if both attempts fail.
   const handleRoundStart = useCallback(() => {
     sessionTokenRef.current = null;
-    getTurnstileToken()
-      .then((turnstileToken) => startSession(deviceId, turnstileToken))
-      .then((token) => { sessionTokenRef.current = token; });
-  }, [deviceId]);
+    const attempt = async (retriesLeft) => {
+      const turnstileToken = await getTurnstileToken();
+      const token = await startSession(deviceId, turnstileToken);
+      if (token) {
+        sessionTokenRef.current = token;
+      } else if (retriesLeft > 0) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return attempt(retriesLeft - 1);
+      } else {
+        showToast(t.sessionTokenWarning, 'error');
+      }
+    };
+    attempt(1);
+  }, [deviceId, showToast, t]);
 
   // Log a finished session to the weekly leaderboard (best score also synced
   // separately via handleSetBest).

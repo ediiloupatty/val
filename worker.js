@@ -104,7 +104,6 @@ const RANKED_SIZE_MAX = 0.35;
 const HIT_BASE_POINTS = 100;
 const HIT_BONUS_REF_MS = 600;     // intervals at/above this earn no bonus
 const HIT_BONUS_DIVISOR = 3;      // => max bonus 200, max 300 pts/hit
-const SCORE_TOLERANCE = 2;        // allow tiny rounding drift between client & server
 const MAX_SHOTS = 3000;           // generous payload ceiling (hits + misses)
 const HARD_FLOOR_MS = 20;         // a single sub-20ms interval is a double-register/bot
 const MAX_SUBFLOOR_HITS = 2;      // tolerate a couple of engine double-registers

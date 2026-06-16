@@ -112,6 +112,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   });
   const mode = MODES[modeKey] || MODES.micro;
   const [modeOpen, setModeOpen] = useState(false);
+  const modeDropdownRef = useRef(null);
   const [pendingMode, setPendingMode] = useState(null); // mode awaiting "restart timer" confirm
   const [dontWarnAgain, setDontWarnAgain] = useState(false); // the dialog's checkbox
   const [skipModeWarn, setSkipModeWarn] = useState(() => {
@@ -203,6 +204,34 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
   // Cancel all pending popup timers on unmount (prevents state updates after unmount).
   useEffect(() => () => { popupTimeouts.current.forEach(clearTimeout); }, []);
+
+  // Close the mode dropdown when the user clicks anywhere outside it.
+  useEffect(() => {
+    if (!modeOpen) return;
+    const handler = (e) => {
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(e.target)) {
+        setModeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [modeOpen]);
+
+  // Space bar shortcut to start practice when the sidebar is visible and
+  // the pointer is not locked (i.e. not actively in-game).
+  const startPracticeRef = useRef(null);
+  useEffect(() => { startPracticeRef.current = startPractice; }, [startPractice]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code !== 'Space') return;
+      if (document.pointerLockElement) return; // mouse locked — in-game, ignore
+      if (runningRef.current) return;          // countdown already ticking
+      e.preventDefault();                      // stop page scroll
+      startPracticeRef.current?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   // Session backup — written to localStorage while a session is running so a browser
   // crash or accidental close doesn't silently discard the user's score.
@@ -1635,7 +1664,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         </header>
 
         {/* Mode selector — click to reveal the full list of modes */}
-        <div className="relative">
+        <div className="relative" ref={modeDropdownRef}>
           <button
             onClick={() => setModeOpen((o) => !o)}
             disabled={isLocked}
