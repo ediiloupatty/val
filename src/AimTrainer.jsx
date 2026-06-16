@@ -1602,7 +1602,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           underneath at all times, so toggling play never resizes the WebGL
           canvas — the result is a smooth slide with no map glitch. */}
       <aside
-        className={`no-scrollbar absolute left-0 top-0 z-20 flex h-full w-80 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-[#141d24]/30 backdrop-blur-md p-6 transition-transform duration-300 ease-out ${
+        className={`no-scrollbar absolute left-0 top-0 z-20 flex h-full w-80 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-[#141d24]/25 backdrop-blur-lg p-6 transition-transform duration-300 ease-out ${
           isFullscreen || (isRunning && isLocked) ? '-translate-x-full' : 'translate-x-0'
         }`}
       >
