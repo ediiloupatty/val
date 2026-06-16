@@ -123,9 +123,9 @@ export async function startSession(deviceId, turnstileToken) {
  * non-fatal to gameplay.
  */
 export async function submitScore(deviceId, name, session, token) {
-  if (!deviceId || !session) return;
+  if (!deviceId || !session) return { ok: false };
   try {
-    await fetchWithTimeout(`${API_URL}/api/score`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/score`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -139,8 +139,15 @@ export async function submitScore(deviceId, name, session, token) {
         token,
       }),
     });
+    if (res.ok) {
+      const json = await res.json();
+      return { ok: json.success === true };
+    }
+    console.warn('[API] Score submit responded with status:', res.status);
+    return { ok: false };
   } catch (err) {
     console.warn('[API] Could not submit score:', err.message);
+    return { ok: false };
   }
 }
 

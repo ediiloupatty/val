@@ -139,8 +139,8 @@ export default function App() {
       resolvedName = typeof updater === 'function' ? updater(prev) : updater;
       return resolvedName;
     });
-    writeProfileCache(resolvedName, best);
-    saveProfile(deviceId, resolvedName, best).then(({ ok }) => {
+    writeProfileCache(resolvedName, bestRef.current);
+    saveProfile(deviceId, resolvedName, bestRef.current).then(({ ok }) => {
       if (ok) showToast(t.profileSaveOk, 'success');
       else showToast(t.profileSaveError, 'error');
     });
@@ -154,6 +154,11 @@ export default function App() {
       return next;
     });
   };
+
+  // Mirror best into a ref so handleSetName always writes the current value to
+  // the profile cache, even if best updated since the last render.
+  const bestRef = useRef(best);
+  useEffect(() => { bestRef.current = best; }, [best]);
 
   // Signed session token, requested when a round starts and redeemed once when
   // the score is submitted. Kept in a ref so it survives re-renders mid-round.
@@ -170,10 +175,11 @@ export default function App() {
 
   // Log a finished session to the weekly leaderboard (best score also synced
   // separately via handleSetBest).
-  const handleSession = (session) => {
-    submitScore(deviceId, name, session, sessionTokenRef.current);
+  const handleSession = useCallback(async (session) => {
+    const result = await submitScore(deviceId, name, session, sessionTokenRef.current);
     sessionTokenRef.current = null; // single use — force a new token next round
-  };
+    if (!result?.ok) showToast(t.scoreSubmitError, 'error');
+  }, [deviceId, name, showToast, t]);
 
   const handleSetLang = (newLang) => {
     setLang(newLang);

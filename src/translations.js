@@ -139,6 +139,7 @@ export const TEXT = {
     onTargetAcc: 'On-Target',
     avgReacquire: 'Avg Re-acquire',
     combo: 'Combo',
+    scoreSubmitError: 'Score could not be saved to the leaderboard. Check your connection.',
     sessionBackupMsg: 'Last session ({score} pts) ended unexpectedly and was not saved.',
     mobileMsg1:
       "This trainer needs a mouse and the Pointer Lock API, which aren't available on phones or tablets.",
@@ -284,6 +285,7 @@ export const TEXT = {
     onTargetAcc: 'Tepat Sasaran',
     avgReacquire: 'Rata Akuisisi',
     combo: 'Kombo',
+    scoreSubmitError: 'Skor gagal tersimpan ke leaderboard. Periksa koneksimu.',
     sessionBackupMsg: 'Sesi terakhir ({score} poin) tidak tersimpan karena browser tertutup.',
     mobileMsg1:
       'Trainer ini butuh mouse dan Pointer Lock API, yang tidak tersedia di HP atau tablet.',

@@ -422,9 +422,9 @@ export default {
           VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(device_id) DO UPDATE SET
             name = excluded.name,
-            score = excluded.score,
-            accuracy = excluded.accuracy,
-            split = excluded.split,
+            score = MAX(profiles.score, excluded.score),
+            accuracy = CASE WHEN excluded.score >= profiles.score THEN excluded.accuracy ELSE profiles.accuracy END,
+            split = CASE WHEN excluded.score >= profiles.score THEN excluded.split ELSE profiles.split END,
             updated_at = excluded.updated_at
         `).bind(deviceId, cleanName, score, accuracy, split, updatedAt).run();
 
