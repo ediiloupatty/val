@@ -217,22 +217,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     return () => document.removeEventListener('mousedown', handler);
   }, [modeOpen]);
 
-  // Space bar shortcut to start practice when the sidebar is visible and
-  // the pointer is not locked (i.e. not actively in-game).
-  const startPracticeRef = useRef(null);
-  useEffect(() => { startPracticeRef.current = startPractice; }, [startPractice]);
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.code !== 'Space') return;
-      if (document.pointerLockElement) return; // mouse locked — in-game, ignore
-      if (runningRef.current) return;          // countdown already ticking
-      e.preventDefault();                      // stop page scroll
-      startPracticeRef.current?.();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
   // Session backup — written to localStorage while a session is running so a browser
   // crash or accidental close doesn't silently discard the user's score.
   // Debounced 1s to avoid writing on every single shot.
@@ -1435,6 +1419,23 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     // Kick off the 3-second countdown. Actual game starts when it finishes.
     setCountdown(3);
   }, [beep, modeKey]);
+
+  // Space bar shortcut to start practice when the sidebar is visible and
+  // the pointer is not locked (i.e. not actively in-game). Must be placed
+  // after startPractice is declared to avoid a temporal dead zone error.
+  const startPracticeRef = useRef(null);
+  useEffect(() => { startPracticeRef.current = startPractice; }, [startPractice]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code !== 'Space') return;
+      if (document.pointerLockElement) return;
+      if (runningRef.current) return;
+      e.preventDefault();
+      startPracticeRef.current?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   // Drives the 3-2-1 countdown. When it reaches 0, the real session begins.
   useEffect(() => {
