@@ -101,3 +101,24 @@ export function savePb(modeKey, score) {
   }
   return false;
 }
+
+/* ---- "Find My Sens" calibration history -------------------------------------
+ * The latest recommendation from the sens advisor, persisted so the player can
+ * see their last result and so repeated calibrations have a reference point. */
+const CALIB_KEY = 'vat_sens_calib';
+
+export function saveCalibration(entry) {
+  try {
+    localStorage.setItem(CALIB_KEY, JSON.stringify(entry));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadCalibration() {
+  try {
+    return JSON.parse(localStorage.getItem(CALIB_KEY)) || null;
+  } catch {
+    return null;
+  }
+}

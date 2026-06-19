@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { loadSettings, saveSettings, savePb, getPb } from './settings.js';
+import { loadSettings, saveSettings, savePb, getPb, saveCalibration } from './settings.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TEXT, MODE_TEXT } from './translations.js';
+import { recommendSens } from './sensAdvisor.js';
 
 /* ------------------------------------------------------------------ *
  * Valorant Aim Trainer — "Micro Flicks"
@@ -66,8 +67,14 @@ const MODES = {
     desc: 'Keep your crosshair on the moving ball. No clicking — score for time on target.',
     count: 1, spreadX: 2.0, spreadY: 0.5, centerY: 0.3, sizeScale: 1.4, reflex: false, tracking: true,
   },
+  calibrate: {
+    name: 'Find My Sens',
+    desc: 'One target at a time across wide angles. We read your flicks and suggest a sensitivity.',
+    // Single far target per engagement = clean flicks → clearest overshoot signal.
+    count: 1, spreadX: 6.0, spreadY: 1.0, centerY: 0.2, sizeScale: 1.0, reflex: false, calibrate: true,
+  },
 };
-const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe', 'tracking'];
+const MODE_ORDER = ['micro', 'wide', 'reflex', 'grid', 'head', 'strafe', 'tracking', 'calibrate'];
 
 // Standard target-size band for the per-mode leaderboard (must match worker.js
 // RANKED_SIZE_MIN/MAX). Outside this, scores still count on the "All" board but
@@ -175,11 +182,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const [popups, setPopups] = useState([]); // floating +score / MISS feedback
   const [hitKey, setHitKey] = useState(0); // bumped each hit to replay the hitmarker
   const [newHigh, setNewHigh] = useState(false);
+  // Sens recommendation produced at the end of a "Find My Sens" calibration round.
+  const [recommendation, setRecommendation] = useState(null);
   const splitRef = useRef({ sum: 0, count: 0, last: 0 });
   // Per-round gameplay log sent to the backend so the server can re-derive the
   // score from the actual hit timing (server-authoritative anti-cheat). Each hit
   // records { t: ms since round start, b: bonus interval ms used for scoring }.
-  const eventLogRef = useRef({ hits: [], misses: 0, startedAt: 0 });
+  const eventLogRef = useRef({ hits: [], misses: 0, startedAt: 0, flicks: [] });
   const popupSeq = useRef(0);
   // Tracks pending popup timeouts so we can cancel them on unmount and avoid
   // "can't perform a React state update on an unmounted component" warnings.
@@ -532,6 +541,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     const hitRadii = new WeakMap();
     const _hitSphere = new THREE.Sphere();
     const _hitPoint = new THREE.Vector3();
+    // Reused for per-frame screen-space projection in the flick analyser below,
+    // so we never allocate a Vector3 per target per frame.
+    const _proj = new THREE.Vector3();
 
     // Geometry cache — reuse SphereGeometry instances by radius key instead of
     // allocating a new one per target. This eliminates repeated GC pressure on
@@ -619,6 +631,19 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       m.userData.spawnTime = performance.now();
       m.userData.spawnAge  = 0; // drives the pop-in animation in animate()
       m.scale.setScalar(0);    // start invisible — animate() scales to 1
+
+      if (!mode.tracking) {
+        // --- Flick analysis seed (used by the "Find My Sens" advisor) ---
+        // Record which side of the crosshair the target spawned on; the analyser
+        // in animate() then watches whether the crosshair settles short of it
+        // (undershoot) or flies past it (overshoot) before the shot lands.
+        _proj.copy(m.position).project(camera);
+        m.userData.dir0 = Math.sign(_proj.x) || 1; // -1 left, +1 right
+        m.userData.minDist = Infinity;             // closest approach so far (NDC)
+        m.userData.overshot = false;               // crosshair crossed past target?
+        m.userData.reversals = 0;                  // micro-correction count
+        m.userData.prevDx = _proj.x;
+      }
 
       if (mode.tracking) {
         // Spawn at the crosshair's world position so the player starts at 100% accuracy.
@@ -780,6 +805,15 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       if (hitMesh) {
         // True reaction = time from this target spawning to being hit.
         const reaction = performance.now() - (hitMesh.userData.spawnTime || performance.now());
+        // Log this engagement's flick profile for the sens advisor (calibrate mode
+        // consumes it; harmless to record in every flick mode).
+        if (hitMesh.userData.dir0 !== undefined) {
+          eventLogRef.current.flicks.push({
+            overshot: !!hitMesh.userData.overshot,
+            reversals: hitMesh.userData.reversals || 0,
+            timeToKill: Math.round(reaction),
+          });
+        }
         engine.current.onHit(reaction);
         // Destroy & respawn nearby.
         const idx = targets.indexOf(hitMesh);
@@ -926,6 +960,37 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         const s = 1 - Math.pow(1 - p, 3); // ease-out cubic
         tgt.scale.setScalar(s);
         if (p >= 1) delete tgt.userData.spawnAge;
+      }
+
+      // --- Flick analyser (overshoot/undershoot) for the "Find My Sens" advisor.
+      // Cheap: projects each target to NDC (crosshair = origin) and tracks how the
+      // signed horizontal offset evolves. Runs for all non-tracking modes while
+      // locked; the recorded numbers are only consumed in calibrate mode. ---
+      if (!curMode.tracking && runningRef.current && isCanvasLocked) {
+        const ENGAGE_BAND = 0.3; // NDC radius within which corrections "count"
+        const NEAR = 0.12;       // counts as having reached the target
+        for (const tgt of targets) {
+          const u = tgt.userData;
+          if (u.dir0 === undefined || u.spawnAge !== undefined) continue; // wait out pop-in
+          _proj.copy(tgt.position).project(camera);
+          const dx = _proj.x;
+          const dist = Math.hypot(_proj.x, _proj.y);
+          if (dist < u.minDist) u.minDist = dist;
+          // Overshoot: crosshair has crossed to the far side of the target after
+          // having gotten close to it.
+          if (!u.overshot && u.minDist < NEAR && Math.sign(dx) !== u.dir0 && dx !== 0) {
+            u.overshot = true;
+          }
+          // Micro-corrections: horizontal travel direction reversed while near.
+          if (dist < ENGAGE_BAND && u.prevDx !== undefined) {
+            const moved = dx - u.prevDx;
+            if (Math.abs(moved) > 0.004 && Math.sign(moved) !== Math.sign(u.lastMove || 0) && u.lastMove) {
+              u.reversals += 1;
+            }
+            if (Math.abs(moved) > 0.004) u.lastMove = moved;
+          }
+          u.prevDx = dx;
+        }
       }
 
       // --- Tracking mode: move ball & score for time on target ---
@@ -1389,13 +1454,14 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     if (!engine.current) return;
     // Reset stats.
     splitRef.current = { sum: 0, count: 0, last: 0 };
-    eventLogRef.current = { hits: [], misses: 0, startedAt: performance.now() };
+    eventLogRef.current = { hits: [], misses: 0, startedAt: performance.now(), flicks: [] };
     setScore(0);
     setHits(0);
     setMisses(0);
     setAvgRt(0);
     setPopups([]);
     setNewHigh(false);
+    setRecommendation(null);
     // Refresh the personal-best chase for this fresh round (same mode = same PB).
     setPbTarget(getPb(modeKey));
     setPbBeaten(false);
@@ -1445,7 +1511,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     const id = setTimeout(() => {
       if (countdown <= 1) {
         setCountdown(null);
-        eventLogRef.current = { hits: [], misses: 0, startedAt: performance.now() };
+        eventLogRef.current = { hits: [], misses: 0, startedAt: performance.now(), flicks: [] };
         runningRef.current = true;
         setIsRunning(true);
         onRoundStart?.();
@@ -1467,6 +1533,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     setAvgRt(0);
     setPopups([]);
     setNewHigh(false);
+    setRecommendation(null);
     setTimeLeft(SESSION_SECONDS);
     setHasPlayed(false);
     engine.current?.resetView();
@@ -1564,9 +1631,29 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       // Best split = fastest (lowest) average; ignore sessions with <2 hits.
       split: avgRt > 0 ? (prev.split ? Math.min(prev.split, avgRt) : avgRt) : prev.split,
     }));
-    // Log this session to the weekly leaderboard (skip empty/idle sessions and
-    // tracking mode, which uses time-based scoring incompatible with hit-log verification).
-    if (score > 0 && !mode.tracking) {
+    // "Find My Sens" calibration: read this round's flicks and suggest a sens.
+    // Not submitted to the leaderboard — it's a personal diagnostic, not a score.
+    if (mode.calibrate) {
+      const flicks = eventLogRef.current.flicks || [];
+      const samples = flicks.length;
+      if (samples > 0) {
+        const overshoots = flicks.reduce((n, f) => n + (f.overshot ? 1 : 0), 0);
+        const totalRev = flicks.reduce((n, f) => n + (f.reversals || 0), 0);
+        const rec = recommendSens({
+          currentSens: sensitivity,
+          overshootRate: overshoots / samples,
+          avgReversals: totalRev / samples,
+          accuracy,
+          samples,
+        });
+        setRecommendation({ ...rec, currentSens: sensitivity });
+        // Persist so repeated calibrations can converge over time.
+        saveCalibration({ ...rec, currentSens: sensitivity, ts: Date.now() });
+      }
+    }
+    // Log this session to the weekly leaderboard (skip empty/idle sessions, plus
+    // tracking and calibrate modes, which aren't ranked hit-log sessions).
+    if (score > 0 && !mode.tracking && !mode.calibrate) {
       const ev = eventLogRef.current;
       onSession?.({
         score,
@@ -1991,6 +2078,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
                   isTracking={mode.tracking}
                   trackingAccuracy={trackingAccuracy}
                   trackingAvgSwitch={trackingAvgSwitch}
+                  recommendation={recommendation}
+                  onApplySens={(v) => {
+                    setSensitivity(v);
+                    saveSettings({ sensitivity: v });
+                  }}
                 />
               ) : (
                 <>
@@ -2174,7 +2266,7 @@ function Crosshair({ color, size, moving, bloomRef }) {
   );
 }
 
-function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t, splitLabel, onAgain, name, setName, isTracking, trackingAccuracy, trackingAvgSwitch }) {
+function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t, splitLabel, onAgain, name, setName, isTracking, trackingAccuracy, trackingAvgSwitch, recommendation, onApplySens }) {
   const [tempName, setTempName] = React.useState('');
   const [saved, setSaved] = React.useState(false);
   const showPrompt = name === 'Agent' && !saved;
@@ -2261,6 +2353,10 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
         </p>
       )}
 
+      {recommendation && (
+        <SensAdviceCard rec={recommendation} t={t} onApplySens={onApplySens} />
+      )}
+
       <button
         onClick={onAgain}
         disabled={!ready}
@@ -2268,6 +2364,62 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
       >
         {t.playAgain}
       </button>
+    </div>
+  );
+}
+
+// Calibration result card shown after a "Find My Sens" round. Translates the
+// pure advisor output (recommendSens) into a readable suggestion + apply action.
+function SensAdviceCard({ rec, t, onApplySens }) {
+  const [applied, setApplied] = React.useState(false);
+  const reasonText = {
+    overshoot: t.reasonOvershoot,
+    undershoot: t.reasonUndershoot,
+    balanced: t.reasonBalanced,
+    lowSamples: t.reasonLowSamples,
+  }[rec.reasonKey] || '';
+  const confText = { low: t.confLow, medium: t.confMedium, high: t.confHigh }[rec.confidence] || '';
+  const canApply = (rec.direction === 'lower' || rec.direction === 'higher') && !applied;
+  const arrow = rec.direction === 'lower' ? '↓' : rec.direction === 'higher' ? '↑' : '→';
+
+  return (
+    <div className="mt-4 rounded-2xl border border-[#00e5c0]/30 bg-[#00e5c0]/[0.07] px-4 py-3 text-left">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#00e5c0]">
+          ⌖ {t.sensAdviceTitle}
+        </p>
+        <span className="text-[10px] uppercase tracking-widest text-slate-400">{confText}</span>
+      </div>
+
+      <div className="mt-2 flex items-end gap-3 tabular-nums">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-slate-400">{t.sensAdviceCurrent}</p>
+          <p className="text-lg font-bold text-slate-300">{rec.currentSens.toFixed(2)}</p>
+        </div>
+        <span className="pb-1 text-xl font-black text-[#00e5c0]">{arrow}</span>
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-slate-400">{t.sensAdviceSuggested}</p>
+          <p className="text-2xl font-black text-[#00e5c0]">{rec.suggested.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <p className="mt-2 text-[11px] leading-snug text-slate-300">{reasonText}</p>
+      <p className="mt-1 text-[10px] text-slate-500">
+        {rec.samples} {t.sensSamples}
+        {rec.reasonKey !== 'lowSamples' && ` · ${Math.round(rec.overshootRate * 100)}% overshoot`}
+      </p>
+
+      {canApply && (
+        <button
+          onClick={() => { onApplySens?.(rec.suggested); setApplied(true); }}
+          className="mt-3 w-full rounded-xl bg-[#00e5c0] px-3 py-2 text-xs font-black uppercase tracking-wider text-[#0f1419] transition-all hover:scale-[1.02] active:scale-95"
+        >
+          {t.sensApply}
+        </button>
+      )}
+      {applied && (
+        <p className="mt-2 text-center text-xs font-bold text-[#00e5c0]">{t.sensApplied}</p>
+      )}
     </div>
   );
 }
