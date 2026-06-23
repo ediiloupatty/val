@@ -8,7 +8,7 @@ Live: [aimku.xyz](https://aimku.xyz)
 
 ## Demo
 
-[![AIMKU demo](https://img.youtube.com/vi/5Nd4XRpEkvw/maxresdefault.jpg)](https://youtu.be/5Nd4XRpEkvw)
+[![AIMKU demo](https://img.youtube.com/vi/5Nd4XRpEkvw/maxresdefault.jpg)](https://youtu.be/Cje_noEfuv8?si=tSlnTX4LsQ1PA_AL)
 
 A short walkthrough: start a session, choose a mode, play a round, and exit. ([watch on YouTube](https://youtu.be/5Nd4XRpEkvw))
 
