@@ -1,0 +1,32 @@
+name = "valorant-aim-trainer-backend"
+main = "worker.js"
+compatibility_date = "2024-06-08"
+
+# Bind a D1 Database.
+# Set database_id to your actual Cloudflare D1 database ID after running:
+#   npx wrangler d1 create valorant-aim-trainer-db
+[[d1_databases]]
+binding = "DB"
+database_name = "valorant-aim-trainer-db"
+database_id = "74acbd75-c434-456d-b00b-ada342384887"
+
+# R2 bucket holding the rotating landing-page background images. Add images with:
+#   npx wrangler r2 object put aimku-backgrounds/<name>.webp --file=<path> --remote
+[[r2_buckets]]
+binding = "BG_BUCKET"
+bucket_name = "aimku-backgrounds"
+
+# Native Cloudflare rate limiting for the write endpoints (/api/score, /api/profile).
+# A real 60 s session produces ~1 submission/min, so these ceilings never affect
+# legitimate play but block scripted spam/flooding. period must be 10 or 60.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 12, period = 60 }   # per deviceId
+
+[[unsafe.bindings]]
+name = "RATE_LIMITER_IP"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 40, period = 60 }   # per IP (looser, accounts for shared/NAT IPs)

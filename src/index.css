@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #0f1419;
+  overflow: hidden;
+}
+
+/* Hide scrollbar */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Slim range sliders */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.10);
+  outline: none;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #ff4655;
+  cursor: pointer;
+  border: 2px solid #0f1419;
+  transition: transform 0.1s ease;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+/* Firefox: track must be styled separately; without this the input's
+   4px height makes the slider nearly unclickable in Firefox. */
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.10);
+  border: none;
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #ff4655;
+  cursor: pointer;
+  border: 2px solid #0f1419;
+  transition: transform 0.1s ease;
+  box-sizing: border-box;
+}
+input[type='range']::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* --- Hit / miss feedback animations --- */
+@keyframes hitmarker {
+  0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+@keyframes floatup {
+  0%   { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-44px); opacity: 0; }
+}
+.animate-hitmarker { animation: hitmarker 0.25s ease-out forwards; }
+.animate-floatup   { animation: floatup  0.65s ease-out forwards; }
+
+/* --- Waving hand (Say Hello menu) --- */
+@keyframes wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30%      { transform: rotate(14deg); }
+  20%, 40%      { transform: rotate(-8deg); }
+  50%           { transform: rotate(14deg); }
+}
+.animate-wave {
+  display: inline-block;
+  transform-origin: 70% 70%;
+  animation: wave 2s ease-in-out infinite;
+}
+
+@keyframes toast-in {
+  0%   { transform: translateX(110%); opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+.animate-toast { animation: toast-in 0.2s ease-out forwards; }
+
+/* --- Leaderboard tab switch (weekly <-> all-time) --- */
+@keyframes lb-fade {
+  0%   { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+.animate-lb { animation: lb-fade 0.28s ease-out; }
+
+/* --- Wind streaks (Jett-style) --- */
+@keyframes wind-streak {
+  0%   { transform: translateX(65vw) scaleX(0.5); opacity: 0; }
+  12%  { opacity: var(--o, 0.5); }
+  85%  { opacity: var(--o, 0.5); }
+  100% { transform: translateX(-155vw) scaleX(1); opacity: 0; }
+}
+.wind-streak {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, rgba(200,232,255,0.95), transparent);
+  filter: blur(0.4px);
+  will-change: transform, opacity;
+  animation: wind-streak linear infinite;
+}

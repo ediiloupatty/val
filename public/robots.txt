@@ -1,0 +1,5 @@
+# https://aimku.xyz robots policy
+User-agent: *
+Allow: /
+
+Sitemap: https://aimku.xyz/sitemap.xml
