@@ -1,24 +1,29 @@
-// riot.js — Unofficial Riot / VALORANT auth + storefront client for the Worker.
+// riot.js — VALORANT storefront client for the Worker (OAuth implicit flow).
 //
-// This talks to Riot's *internal* game API (the same endpoints the VALORANT
-// client uses). There is no official public store API, so everything here is
-// reverse-engineered and can break whenever Riot changes their auth flow.
+// We do NOT take the user's password. Instead the user logs in on Riot's own
+// page via the official `riot-client` OAuth client, which permits a localhost
+// redirect. Riot then redirects to http://localhost/redirect#access_token=...
+// The user copies that URL; we extract the tokens and use them to read the
+// store. This sidesteps Riot's hCaptcha wall entirely (Riot's page handles the
+// captcha + 2FA) and the password never touches our server.
 //
-// Flow implemented:
-//   1. authRequestCookies()  -> hit the auth endpoint to get session cookies
-//   2. submitCredentials()   -> POST username/password
-//        - "response"    => logged in, tokens are in the redirect URI fragment
-//        - "multifactor" => a 2FA email code is required (submitMfaCode next)
-//        - "auth"+error  => wrong credentials / rate limited
-//   3. buildShop(tokens)     -> entitlement + region + storefront + wallet
-//
-// IMPORTANT: this module never stores or logs the password. It is used once to
-// obtain a short-lived access token and then discarded.
+// The access token is short-lived (~1h) and only used to read the store, so we
+// don't persist anything.
 
-const AUTH_URL = 'https://auth.riotgames.com/api/v1/authorization';
 const ENTITLEMENT_URL = 'https://entitlements.auth.riotgames.com/api/token/v1';
 const GEO_URL = 'https://riot-geo.pas.si.riotgames.com/pas/v1/product/valorant';
 const VAPI = 'https://valorant-api.com/v1';
+
+// The URL the user opens to log in. client_id=riot-client + the localhost
+// redirect is what makes this work without being an approved Riot developer.
+export const AUTH_URL =
+  'https://auth.riotgames.com/authorize' +
+  '?redirect_uri=http%3A%2F%2Flocalhost%2Fredirect' +
+  '&client_id=riot-client' +
+  '&response_type=token%20id_token' +
+  '&nonce=1' +
+  '&scope=openid%20link%20ban%20lol_region%20account' +
+  '&prompt=login';
 
 // Currency UUIDs used in wallet balances / store offer costs.
 const VP_CURRENCY = '85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741';   // Valorant Points
@@ -33,52 +38,30 @@ const CLIENT_PLATFORM = btoa(JSON.stringify({
   platformChipset: 'Unknown',
 }));
 
-// A Riot-client-looking UA. The auth endpoint is picky about non-browser callers.
-const USER_AGENT =
-  'RiotClient/63.0.9.4909983.4789131 rso-auth (Windows;10;;Professional, x64)';
-
 // Fallback build string if valorant-api.com is unreachable. The store endpoint
 // tolerates a slightly stale X-Riot-ClientVersion, so this keeps things working.
 const FALLBACK_VERSION = 'release-09.00-shipping-9-2444158';
-
-// --- cookie jar helpers ----------------------------------------------------
-// Cloudflare Workers' fetch has no cookie jar, so we carry cookies by hand:
-// read Set-Cookie off each response and replay them on the next request.
-function mergeSetCookies(res, jar = {}) {
-  const list =
-    typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
-  for (const c of list) {
-    const pair = c.split(';', 1)[0];
-    const idx = pair.indexOf('=');
-    if (idx > 0) jar[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
-  }
-  return jar;
-}
-function cookieHeader(jar) {
-  return Object.entries(jar)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('; ');
-}
-
-// Decode a JWT payload segment (base64url, no signature check — we only read it).
-function jwtPayload(token) {
-  const seg = token.split('.')[1] || '';
-  const pad = seg.length % 4 ? '='.repeat(4 - (seg.length % 4)) : '';
-  return JSON.parse(atob(seg.replace(/-/g, '+').replace(/_/g, '/') + pad));
-}
-
-// Riot returns tokens in the fragment of a redirect URI:
-//   https://playvalorant.com/opt_in#access_token=...&id_token=...&...
-function tokensFromUri(uri) {
-  const frag = (uri || '').split('#')[1] || '';
-  const p = new URLSearchParams(frag);
-  return { accessToken: p.get('access_token'), idToken: p.get('id_token') };
-}
 
 // region -> shard mapping for the pd.<shard>.a.pvp.net data endpoints.
 function shardFor(region) {
   if (region === 'latam' || region === 'br') return 'na';
   return region; // na, eu, ap, kr
+}
+
+// Decode a JWT payload segment (base64url, no signature check — we only read it).
+function jwtPayload(token) {
+  const seg = (token || '').split('.')[1] || '';
+  const pad = seg.length % 4 ? '='.repeat(4 - (seg.length % 4)) : '';
+  return JSON.parse(atob(seg.replace(/-/g, '+').replace(/_/g, '/') + pad));
+}
+
+// Pull access_token + id_token out of a pasted redirect URL (or bare fragment).
+// The redirect looks like: http://localhost/redirect#access_token=...&id_token=...
+export function extractTokens(url) {
+  const raw = String(url || '');
+  const frag = raw.includes('#') ? raw.slice(raw.indexOf('#') + 1) : raw;
+  const p = new URLSearchParams(frag);
+  return { accessToken: p.get('access_token'), idToken: p.get('id_token') || '' };
 }
 
 async function clientVersion() {
@@ -91,8 +74,8 @@ async function clientVersion() {
   }
 }
 
-// Resolve a store offer's skin-level UUID to a display name + icon via the
-// community valorant-api.com (this part is a legal, stable metadata source).
+// Resolve a skin-level UUID to a display name + icon via the community
+// valorant-api.com (a legal, stable metadata source).
 async function resolveSkin(levelId) {
   try {
     const res = await fetch(`${VAPI}/weapons/skinlevels/${levelId}`);
@@ -103,71 +86,36 @@ async function resolveSkin(levelId) {
   }
 }
 
-// --- auth steps ------------------------------------------------------------
-export async function authRequestCookies() {
-  const res = await fetch(AUTH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
-    body: JSON.stringify({
-      client_id: 'play-valorant-web-prod',
-      nonce: '1',
-      redirect_uri: 'https://playvalorant.com/opt_in',
-      response_type: 'token id_token',
-      scope: 'account openid',
-    }),
-  });
-  return mergeSetCookies(res);
-}
+// Given the tokens from the redirect, fetch entitlement/region/store/wallet.
+// Returns { status: 'ok', shop } | { status: 'error', error }.
+export async function fetchShop({ accessToken, idToken }) {
+  if (!accessToken) return { status: 'error', error: 'Token tidak ditemukan di URL' };
 
-async function submitCredentials(jar, username, password) {
-  const res = await fetch(AUTH_URL, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': USER_AGENT,
-      Cookie: cookieHeader(jar),
-    },
-    body: JSON.stringify({
-      type: 'auth',
-      username,
-      password,
-      remember: false,
-      language: 'en_US',
-    }),
-  });
-  mergeSetCookies(res, jar);
-  const data = await res.json().catch(() => ({}));
-  return data;
-}
-
-async function submitMfa(jar, code) {
-  const res = await fetch(AUTH_URL, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': USER_AGENT,
-      Cookie: cookieHeader(jar),
-    },
-    body: JSON.stringify({ type: 'multifactor', code: String(code), rememberDevice: false }),
-  });
-  mergeSetCookies(res, jar);
-  const data = await res.json().catch(() => ({}));
-  return data;
-}
-
-// --- storefront ------------------------------------------------------------
-async function buildShop({ accessToken, idToken }) {
   // Entitlement token — required alongside the access token for game endpoints.
   const entRes = await fetch(ENTITLEMENT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({}),
   });
+  if (!entRes.ok) {
+    return {
+      status: 'error',
+      error:
+        entRes.status === 401 || entRes.status === 400
+          ? 'Token sudah kadaluarsa. Login ulang lewat Riot.'
+          : `Gagal ambil entitlement (HTTP ${entRes.status})`,
+    };
+  }
   const entData = await entRes.json().catch(() => ({}));
   const entitlement = entData.entitlements_token;
   if (!entitlement) return { status: 'error', error: 'Gagal mengambil entitlement token' };
 
-  const puuid = jwtPayload(accessToken).sub;
+  let puuid;
+  try {
+    puuid = jwtPayload(accessToken).sub;
+  } catch {
+    return { status: 'error', error: 'Token login tidak valid' };
+  }
   if (!puuid) return { status: 'error', error: 'Gagal membaca PUUID akun' };
 
   // Region/shard via the PAS (geo affinity) token.
@@ -178,8 +126,8 @@ async function buildShop({ accessToken, idToken }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ id_token: idToken }),
     });
-    const geoJwt = await geoRes.text();
-    region = jwtPayload(geoJwt).affinities?.live || 'na';
+    const geo = await geoRes.json().catch(() => ({}));
+    region = geo.affinities?.live || 'na';
   } catch {
     /* fall back to na */
   }
@@ -206,17 +154,20 @@ async function buildShop({ accessToken, idToken }) {
   const store = await storeRes.json();
 
   const panel = store.SkinsPanelLayout || {};
-  const offerIds = panel.SingleItemOffers || [];
   const offers = panel.SingleItemStoreOffers || [];
   const remaining = panel.SingleItemOffersRemainingDurationInSeconds || 0;
 
-  const costById = {};
-  for (const o of offers) costById[o.OfferID] = o.Cost?.[VP_CURRENCY] ?? null;
-
   const skins = await Promise.all(
-    offerIds.map(async (id) => {
-      const meta = await resolveSkin(id);
-      return { id, name: meta.name, image: meta.image, price: costById[id] ?? null };
+    offers.map(async (offer) => {
+      // The real skin UUID is usually in Rewards[0].ItemID; fall back to OfferID.
+      const itemId = offer.Rewards?.[0]?.ItemID || offer.OfferID;
+      const meta = await resolveSkin(itemId);
+      return {
+        id: offer.OfferID || itemId,
+        name: meta.name,
+        image: meta.image,
+        price: offer.Cost?.[VP_CURRENCY] ?? null,
+      };
     })
   );
 
@@ -237,52 +188,4 @@ async function buildShop({ accessToken, idToken }) {
   }
 
   return { status: 'ok', shop: { region, remaining, skins, wallet } };
-}
-
-// --- interpret an auth response into a normalized result -------------------
-async function interpret(data, jar) {
-  if (data.type === 'response') {
-    const tokens = tokensFromUri(data.response?.parameters?.uri);
-    if (!tokens.accessToken) return { status: 'error', error: 'Gagal membaca token login' };
-    return buildShop(tokens);
-  }
-  if (data.type === 'multifactor') {
-    return { status: 'mfa', jar, email: data.multifactor?.email || null };
-  }
-  if (data.error === 'auth_failure') {
-    return { status: 'error', error: 'Username atau password salah' };
-  }
-  if (data.error === 'rate_limited') {
-    return { status: 'error', error: 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.' };
-  }
-  if (data.error) {
-    return { status: 'error', error: `Login gagal: ${data.error}` };
-  }
-  return {
-    status: 'error',
-    error: 'Login gagal (respons tak dikenali). Riot mungkin memblokir permintaan dari server.',
-  };
-}
-
-// --- public entry points ---------------------------------------------------
-// Returns one of:
-//   { status: 'ok',   shop }
-//   { status: 'mfa',  jar, email }   -> caller must follow up with submitMfaCode
-//   { status: 'error', error }
-export async function login(username, password) {
-  const jar = await authRequestCookies();
-  const data = await submitCredentials(jar, username, password);
-  return interpret(data, jar);
-}
-
-// Returns { status: 'ok', shop } | { status: 'error', error }.
-export async function submitMfaCode(jar, code) {
-  const data = await submitMfa(jar, code);
-  if (data.type === 'response') {
-    const tokens = tokensFromUri(data.response?.parameters?.uri);
-    if (!tokens.accessToken) return { status: 'error', error: 'Gagal membaca token login' };
-    return buildShop(tokens);
-  }
-  if (data.type === 'multifactor') return { status: 'error', error: 'Kode 2FA salah' };
-  return { status: 'error', error: 'Verifikasi 2FA gagal' };
 }

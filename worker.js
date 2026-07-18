@@ -1,4 +1,4 @@
-import { login as riotLogin, submitMfaCode as riotSubmitMfa } from './riot.js';
+import { fetchShop as riotFetchShop, extractTokens } from './riot.js';
 
 // Origins allowed to call this API.
 const ALLOWED_ORIGINS = [
@@ -283,39 +283,8 @@ async function verifySession(secret, token) {
   return { ok: true, deviceId, nonce };
 }
 
-// --- Shop checker: encrypted MFA hand-off ----------------------------------
-// The Riot login is two steps when 2FA is on: submit password, then submit the
-// emailed code. The cookies from step 1 must survive into step 2, but the Worker
-// is stateless. Rather than store them server-side, we encrypt the cookie jar
-// (AES-GCM, key derived from SHOP_SECRET) into an opaque token the client holds
-// for a few minutes and sends back with the code. The client can't read it, and
-// it can't be replayed after the short TTL check in the /api/shop/mfa handler.
-async function shopAesKey(secret) {
-  const hash = await crypto.subtle.digest('SHA-256', _enc.encode(secret));
-  return crypto.subtle.importKey('raw', hash, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-}
-async function shopEncrypt(secret, obj) {
-  const key = await shopAesKey(secret);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(
-    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, _enc.encode(JSON.stringify(obj)))
-  );
-  const out = new Uint8Array(iv.length + ct.length);
-  out.set(iv);
-  out.set(ct, iv.length);
-  return b64urlEncode(out);
-}
-async function shopDecrypt(secret, token) {
-  const key = await shopAesKey(secret);
-  const raw = Uint8Array.from(b64urlDecodeToString(token), (c) => c.charCodeAt(0));
-  const iv = raw.slice(0, 12);
-  const ct = raw.slice(12);
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-  return JSON.parse(new TextDecoder().decode(pt));
-}
-
-// Per-IP rate limit for the shop login/mfa endpoints (they have no deviceId).
-// Reuses the IP rate-limit binding; degrades open if it isn't configured.
+// Per-IP rate limit for the shop endpoint (it has no deviceId). Reuses the IP
+// rate-limit binding; degrades open if it isn't configured.
 async function shopRateOk(env, request) {
   if (!env.RATE_LIMITER_IP) return true;
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
@@ -886,26 +855,26 @@ export default {
       }
     }
 
-    // POST /api/shop/login — check a user's VALORANT store. Body: { username,
-    // password, turnstileToken? }. On success returns the daily shop; if the
-    // account has 2FA it returns { mfaRequired: true, mfaSession } instead, and
-    // the client must call /api/shop/mfa with the emailed code.
+    // POST /api/shop/store — check a user's VALORANT store. Body: { url } where
+    // `url` is the redirect URL the user copied after logging in on Riot's own
+    // page (contains #access_token=...&id_token=...). We extract the tokens and
+    // use them to read the store.
     //
-    // NOTE: this uses Riot's unofficial/internal API and violates Riot's ToS.
-    // It is a personal/learning feature. The password is used once to obtain a
-    // token and is never stored or logged.
-    if (path === "/api/shop/login" && request.method === "POST") {
-      if (!env.SHOP_SECRET) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Shop checker belum dikonfigurasi di server" }),
-          { status: 503, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
+    // NOTE: this reads Riot's internal store API (against Riot's ToS); it is a
+    // personal/learning feature. The user authenticates on Riot's page — we
+    // never see their password. The access token is used once and not stored.
+    if (path === "/api/shop/store" && request.method === "POST") {
       try {
-        const { username, password, turnstileToken } = await request.json();
-        if (!username || !password) {
+        const body = await request.json();
+        const { url, turnstileToken } = body;
+        // Accept either the pasted redirect URL, or already-extracted tokens.
+        const tokens = url
+          ? extractTokens(url)
+          : { accessToken: body.accessToken, idToken: body.idToken || "" };
+
+        if (!tokens.accessToken) {
           return new Response(
-            JSON.stringify({ success: false, error: "Username dan password wajib diisi" }),
+            JSON.stringify({ success: false, error: "URL login tidak valid — pastikan menyalin lengkap termasuk bagian setelah #" }),
             { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
@@ -926,75 +895,7 @@ export default {
           );
         }
 
-        const result = await riotLogin(String(username), String(password));
-        if (result.status === "ok") {
-          return new Response(
-            JSON.stringify({ success: true, shop: result.shop }),
-            { headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        if (result.status === "mfa") {
-          const mfaSession = await shopEncrypt(env.SHOP_SECRET, { jar: result.jar, ts: Date.now() });
-          return new Response(
-            JSON.stringify({ success: true, mfaRequired: true, mfaSession, email: result.email }),
-            { headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        return new Response(
-          JSON.stringify({ success: false, error: result.error }),
-          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      } catch (err) {
-        console.error("shop login error:", err);
-        return new Response(
-          JSON.stringify({ success: false, error: "Gagal login ke Riot" }),
-          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-    }
-
-    // POST /api/shop/mfa — finish a 2FA login. Body: { mfaSession, code }.
-    // mfaSession is the encrypted cookie jar issued by /api/shop/login.
-    if (path === "/api/shop/mfa" && request.method === "POST") {
-      if (!env.SHOP_SECRET) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Shop checker belum dikonfigurasi di server" }),
-          { status: 503, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-      try {
-        const { mfaSession, code } = await request.json();
-        if (!mfaSession || !code) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Sesi 2FA atau kode tidak ada" }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        if (!(await shopRateOk(env, request))) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Terlalu banyak percobaan. Pelan-pelan ya." }),
-            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-
-        let payload;
-        try {
-          payload = await shopDecrypt(env.SHOP_SECRET, mfaSession);
-        } catch {
-          return new Response(
-            JSON.stringify({ success: false, error: "Sesi 2FA tidak valid" }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        // Short TTL: the emailed code and its session are only good briefly.
-        if (!payload || !payload.jar || Date.now() - Number(payload.ts) > 5 * 60 * 1000) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Sesi 2FA kadaluarsa. Login ulang." }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-
-        const result = await riotSubmitMfa(payload.jar, String(code));
+        const result = await riotFetchShop(tokens);
         if (result.status === "ok") {
           return new Response(
             JSON.stringify({ success: true, shop: result.shop }),
@@ -1006,9 +907,9 @@ export default {
           { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       } catch (err) {
-        console.error("shop mfa error:", err);
+        console.error("shop store error:", err);
         return new Response(
-          JSON.stringify({ success: false, error: "Gagal verifikasi 2FA" }),
+          JSON.stringify({ success: false, error: "Gagal mengambil toko" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }

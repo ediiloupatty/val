@@ -31,6 +31,6 @@ type = "ratelimit"
 namespace_id = "1002"
 simple = { limit = 40, period = 60 }   # per IP (looser, accounts for shared/NAT IPs)
 
-# Store checker (/api/shop/*) secrets — set as Worker secrets, NOT here:
-#   npx wrangler secret put SHOP_SECRET     # any long random string; encrypts the 2FA hand-off
-# Optional: SESSION_SECRET / TURNSTILE_SECRET are also secrets (already used above).
+# Store checker (/api/shop/store): needs no dedicated secret. The user logs in
+# on Riot's own page (OAuth implicit flow) and pastes the redirect URL; we only
+# extract the access token from it. TURNSTILE_SECRET (optional) still gates it.

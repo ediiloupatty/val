@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { shopLogin, shopMfa } from './api.js';
+import { fetchShop } from './api.js';
 import { getTurnstileToken } from './turnstile.js';
 
-// VALORANT store checker. Talks to the Worker's unofficial-Riot proxy
-// (/api/shop/*). This is a personal/learning feature: it uses Riot's internal
-// API, which is against Riot's ToS and can break at any time. The password is
-// sent once over HTTPS to our own Worker, used to obtain a token, and never
-// stored — but we still warn the user clearly before they type it.
+// VALORANT store checker using Riot's OAuth implicit flow. The user logs in on
+// Riot's OWN page (Riot handles captcha + 2FA), gets redirected to a localhost
+// URL carrying the tokens, and pastes that URL here. We never see their
+// password. The Worker (/api/shop/store) extracts the tokens and reads the store.
+
+// client_id=riot-client + the localhost redirect is what lets this work without
+// being an approved Riot developer. (Mirrors AUTH_URL in riot.js.)
+const AUTH_URL =
+  'https://auth.riotgames.com/authorize' +
+  '?redirect_uri=http%3A%2F%2Flocalhost%2Fredirect' +
+  '&client_id=riot-client' +
+  '&response_type=token%20id_token' +
+  '&nonce=1' +
+  '&scope=openid%20link%20ban%20lol_region%20account' +
+  '&prompt=login';
 
 const VP_ICON =
   'https://media.valorant-api.com/currencies/85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741/displayicon.png';
@@ -45,61 +55,37 @@ function SkinCard({ skin }) {
 }
 
 export default function ShopChecker({ onExit }) {
-  const [step, setStep] = useState('login'); // 'login' | 'mfa' | 'shop'
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [mfaSession, setMfaSession] = useState(null);
-  const [mfaEmail, setMfaEmail] = useState(null);
+  const [step, setStep] = useState('login'); // 'login' | 'shop'
+  const [redirectUrl, setRedirectUrl] = useState('');
   const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
+  const handleCheck = async (e) => {
     e.preventDefault();
-    if (!username || !password || loading) return;
+    const url = redirectUrl.trim();
+    if (!url || loading) return;
+    if (!url.includes('access_token')) {
+      setError('URL belum berisi token. Salin URL lengkap dari address bar setelah login (harus ada "access_token").');
+      return;
+    }
     setLoading(true);
     setError('');
     const turnstileToken = await getTurnstileToken();
-    const res = await shopLogin(username.trim(), password, turnstileToken);
-    setLoading(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    if (res.mfaRequired) {
-      setMfaSession(res.mfaSession);
-      setMfaEmail(res.email);
-      setStep('mfa');
-      return;
-    }
-    setShop(res.shop);
-    setPassword(''); // drop the password from memory once we're past login
-    setStep('shop');
-  };
-
-  const handleMfa = async (e) => {
-    e.preventDefault();
-    if (!code || loading) return;
-    setLoading(true);
-    setError('');
-    const res = await shopMfa(mfaSession, code.trim());
+    const res = await fetchShop(url, turnstileToken);
     setLoading(false);
     if (!res.ok) {
       setError(res.error);
       return;
     }
     setShop(res.shop);
-    setPassword('');
+    setRedirectUrl(''); // drop the token-bearing URL from state once used
     setStep('shop');
   };
 
   const reset = () => {
     setStep('login');
-    setPassword('');
-    setCode('');
-    setMfaSession(null);
-    setMfaEmail(null);
+    setRedirectUrl('');
     setShop(null);
     setError('');
   };
@@ -115,101 +101,74 @@ export default function ShopChecker({ onExit }) {
           >
             ← Kembali
           </button>
-          <h1 className="text-lg font-black uppercase tracking-wider text-val-red">
-            Cek Toko
-          </h1>
-        </div>
-
-        {/* Warning banner */}
-        <div className="mb-6 rounded-2xl border border-val-red/30 bg-val-red/10 p-4 text-sm text-slate-200">
-          <p className="font-bold text-val-red">⚠ Baca dulu sebelum login</p>
-          <p className="mt-1.5 leading-relaxed text-slate-300">
-            Fitur ini pakai API tidak resmi Riot dan <b>melanggar ToS Riot</b>. Password kamu
-            dikirim sekali ke server untuk ambil data toko, <b>tidak disimpan</b>. Pakai dengan
-            risiko sendiri — sebaiknya hanya untuk akun sendiri.
-          </p>
+          <h1 className="text-lg font-black uppercase tracking-wider text-val-red">Cek Toko</h1>
         </div>
 
         {/* Step: login */}
         {step === 'login' && (
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-400">
-                Username Riot
-              </label>
+          <div className="flex flex-col gap-6">
+            {/* Info banner */}
+            <div className="rounded-2xl border border-val-accent/30 bg-val-accent/10 p-4 text-sm text-slate-200">
+              <p className="font-bold text-val-accent">🔒 Login lewat halaman Riot asli</p>
+              <p className="mt-1.5 leading-relaxed text-slate-300">
+                Kamu login di halaman Riot sendiri — <b>password kamu tidak pernah masuk ke web ini</b>.
+                Kami cuma membaca data toko. Tetap catatan: fitur ini pakai API internal Riot
+                (melanggar ToS), pakai untuk akun sendiri.
+              </p>
+            </div>
+
+            {/* Steps */}
+            <ol className="flex flex-col gap-4">
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">1</span>
+                <div className="flex-1">
+                  <p className="text-sm text-slate-300">Buka halaman login Riot, lalu login seperti biasa.</p>
+                  <a
+                    href={AUTH_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl bg-val-red px-5 py-2.5 text-sm font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90"
+                  >
+                    Buka Login Riot ↗
+                  </a>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">2</span>
+                <p className="flex-1 text-sm text-slate-300">
+                  Setelah login, browser akan pindah ke halaman <b className="text-white">error/blank</b> di{' '}
+                  <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">localhost</code> — itu normal.
+                  <b className="text-white"> Salin seluruh URL</b> dari address bar.
+                </p>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">3</span>
+                <p className="flex-1 text-sm text-slate-300">Tempel URL-nya di sini:</p>
+              </li>
+            </ol>
+
+            <form onSubmit={handleCheck} className="flex flex-col gap-4">
               <input
                 type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-val-panel px-4 py-3 text-white outline-none transition-colors focus:border-val-accent"
-                placeholder="username"
+                value={redirectUrl}
+                onChange={(e) => setRedirectUrl(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-val-panel px-4 py-3 text-sm text-white outline-none transition-colors focus:border-val-accent"
+                placeholder="http://localhost/redirect#access_token=..."
               />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-400">
-                Password
-              </label>
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-val-panel px-4 py-3 text-white outline-none transition-colors focus:border-val-accent"
-                placeholder="••••••••"
-              />
-            </div>
-            {error && <p className="text-sm font-semibold text-val-red">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading || !username || !password}
-              className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-val-red px-6 py-3 font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                'Cek Toko Saya'
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* Step: 2FA */}
-        {step === 'mfa' && (
-          <form onSubmit={handleMfa} className="flex flex-col gap-4">
-            <p className="text-sm text-slate-300">
-              Masukkan kode 2FA yang dikirim ke email
-              {mfaEmail ? <b className="text-white"> {mfaEmail}</b> : ' kamu'}.
-            </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              className="w-full rounded-xl border border-white/10 bg-val-panel px-4 py-3 text-center text-2xl font-black tracking-[0.5em] text-white outline-none transition-colors focus:border-val-accent"
-              placeholder="000000"
-            />
-            {error && <p className="text-sm font-semibold text-val-red">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading || !code}
-              className="flex items-center justify-center gap-2 rounded-xl bg-val-red px-6 py-3 font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                'Verifikasi'
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="text-sm font-semibold text-slate-400 transition-colors hover:text-white"
-            >
-              ← Login ulang
-            </button>
-          </form>
+              {error && <p className="text-sm font-semibold text-val-red">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading || !redirectUrl}
+                className="flex items-center justify-center gap-2 rounded-xl bg-val-accent px-6 py-3 font-black uppercase tracking-wider text-val-dark transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? (
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-val-dark/30 border-t-val-dark" />
+                ) : (
+                  'Cek Toko Saya'
+                )}
+              </button>
+            </form>
+          </div>
         )}
 
         {/* Step: shop */}
