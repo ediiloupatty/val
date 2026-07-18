@@ -54,10 +54,45 @@ function SkinCard({ skin }) {
   );
 }
 
-export default function ShopChecker({ onExit }) {
+function RankBadge({ rank }) {
+  if (!rank || !rank.name || rank.name === 'Unranked') {
+    return <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Unranked</span>;
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      {rank.icon && <img src={rank.icon} alt={rank.name} className="h-5 w-5" />}
+      <span className="text-xs font-bold uppercase tracking-wider" style={rank.color ? { color: rank.color } : undefined}>
+        {rank.name}
+      </span>
+    </span>
+  );
+}
+
+function IdentityHeader({ profile }) {
+  if (!profile || !profile.displayName) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-4">
+      {profile.card && (
+        <img src={profile.card} alt="" className="h-12 w-12 rounded-lg object-cover" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-base font-black text-white">{profile.displayName}</p>
+        <div className="mt-0.5 flex items-center gap-3">
+          {profile.level != null && (
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Lv {profile.level}</span>
+          )}
+          <RankBadge rank={profile.rank} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ShopChecker({ onExit, onIdentity }) {
   const [step, setStep] = useState('login'); // 'login' | 'shop'
   const [redirectUrl, setRedirectUrl] = useState('');
   const [shop, setShop] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,6 +114,9 @@ export default function ShopChecker({ onExit }) {
       return;
     }
     setShop(res.shop);
+    setProfile(res.profile || null);
+    // Propagate the Valorant identity up so the app profile/leaderboard updates.
+    if (res.profile && onIdentity) onIdentity(res.profile);
     setRedirectUrl(''); // drop the token-bearing URL from state once used
     setStep('shop');
   };
@@ -174,6 +212,7 @@ export default function ShopChecker({ onExit }) {
         {/* Step: shop */}
         {step === 'shop' && shop && (
           <div className="flex flex-col gap-5">
+            <IdentityHeader profile={profile} />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm text-slate-300">
                 <span className="rounded-full bg-white/5 px-3 py-1 font-bold uppercase tracking-wider text-val-accent">

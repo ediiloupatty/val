@@ -898,7 +898,7 @@ export default {
         const result = await riotFetchShop(tokens);
         if (result.status === "ok") {
           return new Response(
-            JSON.stringify({ success: true, shop: result.shop }),
+            JSON.stringify({ success: true, shop: result.shop, profile: result.profile }),
             { headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }

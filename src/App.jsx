@@ -28,7 +28,19 @@ function checkIsMobile() {
 // brand-new user. The persistent deviceId stays the source of truth; this is
 // just a local mirror for an instant, flicker-free first paint.
 const PROFILE_CACHE_KEY = 'vat_profile';
+// Valorant identity (name#tag, avatar, level, rank) pulled from a store login.
+const VALORANT_KEY = 'vat_valorant';
 const DEFAULT_BEST = { score: 0, accuracy: 0, split: 0 };
+
+function readValorantProfile() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VALORANT_KEY));
+    if (v && typeof v === 'object') return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 function readProfileCache() {
   try {
@@ -93,6 +105,9 @@ export default function App() {
   // Only show the loading shimmer when there's nothing cached to display yet.
   const [profileLoading, setProfileLoading] = useState(() => !readProfileCache());
 
+  // Valorant identity from a store login (avatar/level/rank shown on the profile).
+  const [valorantProfile, setValorantProfile] = useState(() => readValorantProfile());
+
   // Toast notifications
   const [toasts, setToasts] = useState([]);
   const toastTimers = useRef([]);
@@ -141,6 +156,20 @@ export default function App() {
       if (ok) showToast(t.profileSaveOk, 'success');
       else showToast(t.profileSaveError, 'error');
     });
+  };
+
+  // Called after a successful store login: adopt the Valorant identity. The
+  // name#tag becomes the app/leaderboard name; avatar/level/rank are persisted
+  // for the profile display.
+  const handleValorantIdentity = (identity) => {
+    if (!identity) return;
+    setValorantProfile(identity);
+    try {
+      localStorage.setItem(VALORANT_KEY, JSON.stringify(identity));
+    } catch {
+      /* ignore */
+    }
+    if (identity.displayName) handleSetName(identity.displayName.slice(0, 20));
   };
 
   const handleSetBest = (updater) => {
@@ -221,6 +250,7 @@ export default function App() {
           deviceId={deviceId}
           profileLoading={profileLoading}
           showToast={showToast}
+          valorantProfile={valorantProfile}
         />
       ) : view === 'shop' ? (
         <Suspense
@@ -230,7 +260,7 @@ export default function App() {
             </div>
           }
         >
-          <ShopChecker onExit={() => setView('landing')} />
+          <ShopChecker onExit={() => setView('landing')} onIdentity={handleValorantIdentity} />
         </Suspense>
       ) : (
         <Suspense

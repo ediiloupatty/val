@@ -50,7 +50,7 @@ const CONTACT = {
   github: 'https://github.com/ediiloupatty', // ← your profile
 };
 
-export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name, setName, best, deviceId, profileLoading, showToast }) {
+export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name, setName, best, deviceId, profileLoading, showToast, valorantProfile }) {
   const [panel, setPanel] = useState(null);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
@@ -419,20 +419,29 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
             </p>
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          {profileLoading ? (
-            <div className="mb-1 ml-auto h-3 w-20 animate-pulse rounded bg-white/10" />
-          ) : (
-            <p
-              className={`text-sm md:text-base font-black tracking-wide truncate max-w-[140px] ${
-                name === 'Agent' ? 'text-slate-500' : 'text-white'
-              }`}
-            >
-              {name}
-            </p>
+        <div className="flex shrink-0 items-center gap-2.5">
+          {valorantProfile?.card && (
+            <img
+              src={valorantProfile.card}
+              alt=""
+              className="h-9 w-9 shrink-0 rounded-lg object-cover md:h-10 md:w-10"
+            />
           )}
-          <p className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-slate-400">{t.bestScoreLabel}</p>
-          <p className="text-lg md:text-xl font-black tabular-nums text-val-accent">{best.score}</p>
+          <div className="text-right">
+            {profileLoading ? (
+              <div className="mb-1 ml-auto h-3 w-20 animate-pulse rounded bg-white/10" />
+            ) : (
+              <p
+                className={`text-sm md:text-base font-black tracking-wide truncate max-w-[140px] ${
+                  name === 'Agent' ? 'text-slate-500' : 'text-white'
+                }`}
+              >
+                {name}
+              </p>
+            )}
+            <p className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-slate-400">{t.bestScoreLabel}</p>
+            <p className="text-lg md:text-xl font-black tabular-nums text-val-accent">{best.score}</p>
+          </div>
         </div>
       </header>
 
@@ -513,6 +522,38 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       {/* ---------- Panels ---------- */}
       {panel === 'profile' && (
         <Modal title={t.profile} onClose={() => setPanel(null)}>
+          {valorantProfile?.displayName && (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-val-accent/30 bg-val-accent/5 p-3">
+              {valorantProfile.card && (
+                <img src={valorantProfile.card} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-black text-white">{valorantProfile.displayName}</p>
+                <div className="mt-1 flex items-center gap-3">
+                  {valorantProfile.level != null && (
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Lv {valorantProfile.level}
+                    </span>
+                  )}
+                  {valorantProfile.rank?.name && valorantProfile.rank.name !== 'Unranked' ? (
+                    <span className="flex items-center gap-1.5">
+                      {valorantProfile.rank.icon && (
+                        <img src={valorantProfile.rank.icon} alt="" className="h-5 w-5" />
+                      )}
+                      <span
+                        className="text-[11px] font-bold uppercase tracking-wider"
+                        style={valorantProfile.rank.color ? { color: valorantProfile.rank.color } : undefined}
+                      >
+                        {valorantProfile.rank.name}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Unranked</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <label className="mb-4 block">
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-widest text-slate-400">

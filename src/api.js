@@ -223,7 +223,7 @@ export async function fetchShop(redirectUrl, turnstileToken) {
       20000
     );
     const json = await res.json().catch(() => ({}));
-    if (res.ok && json.success) return { ok: true, shop: json.shop };
+    if (res.ok && json.success) return { ok: true, shop: json.shop, profile: json.profile };
     return { ok: false, error: json.error || 'Gagal mengambil toko' };
   } catch (err) {
     return { ok: false, error: 'Tidak bisa terhubung ke server' };

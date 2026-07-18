@@ -86,8 +86,77 @@ async function resolveSkin(levelId) {
   }
 }
 
-// Given the tokens from the redirect, fetch entitlement/region/store/wallet.
-// Returns { status: 'ok', shop } | { status: 'error', error }.
+// Resolve a competitive-tier number (0..27) into a name/icon/color via the
+// community API. 0 (or unknown) => Unranked.
+async function resolveRank(tier) {
+  if (!tier || tier <= 0) return { tier: 0, name: 'Unranked', icon: null, color: null };
+  try {
+    const res = await fetch(`${VAPI}/competitivetiers`);
+    const j = await res.json();
+    const episodes = j.data || [];
+    const current = episodes[episodes.length - 1]; // latest tier set
+    const t = (current?.tiers || []).find((x) => x.tier === tier);
+    if (!t) return { tier, name: 'Unranked', icon: null, color: null };
+    return {
+      tier,
+      name: t.tierName || 'Unranked',
+      icon: t.largeIcon || null,
+      color: t.color ? `#${t.color.slice(0, 6)}` : null,
+    };
+  } catch {
+    return { tier, name: 'Unranked', icon: null, color: null };
+  }
+}
+
+// Fetch the player's VALORANT identity: name#tag, player-card avatar, account
+// level, and current rank. Every sub-call is best-effort — a failure just leaves
+// that field null rather than sinking the whole profile.
+async function fetchIdentity(headers, shard, puuid) {
+  const base = `https://pd.${shard}.a.pvp.net`;
+  const [nameData, loadout, mmr] = await Promise.all([
+    fetch(`${base}/name-service/v2/players`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify([puuid]),
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(`${base}/personalization/v2/players/${puuid}/playerloadout`, { headers })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+    fetch(`${base}/mmr/v1/players/${puuid}`, { headers })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+  ]);
+
+  const nm = Array.isArray(nameData) ? nameData[0] : null;
+  const gameName = nm?.GameName || null;
+  const tagLine = nm?.TagLine || null;
+
+  const cardId = loadout?.Identity?.PlayerCardID || null;
+  const card = cardId ? `https://media.valorant-api.com/playercards/${cardId}/smallart.png` : null;
+  const level = loadout?.Identity?.AccountLevel || null;
+
+  // Current rank = the tier from the most recent competitive game; if that's
+  // empty (no recent comp), fall back to the peak tier across seasons.
+  let tier = mmr?.LatestCompetitiveUpdate?.TierAfterUpdate || 0;
+  const seasons = mmr?.QueueSkills?.competitive?.SeasonalInfoBySeasonID;
+  if (!tier && seasons) {
+    tier = Object.values(seasons).reduce((mx, s) => Math.max(mx, s?.CompetitiveTier || 0), 0);
+  }
+  const rank = await resolveRank(tier);
+
+  return {
+    gameName,
+    tagLine,
+    displayName: gameName ? (tagLine ? `${gameName}#${tagLine}` : gameName) : null,
+    card,
+    level,
+    rank,
+  };
+}
+
+// Given the tokens from the redirect, fetch entitlement/region/store/wallet plus
+// the player's identity (name#tag, avatar, level, rank).
+// Returns { status: 'ok', shop, profile } | { status: 'error', error }.
 export async function fetchShop({ accessToken, idToken }) {
   if (!accessToken) return { status: 'error', error: 'Token tidak ditemukan di URL' };
 
@@ -171,21 +240,26 @@ export async function fetchShop({ accessToken, idToken }) {
     })
   );
 
-  // Wallet (best-effort — a failure here shouldn't sink the whole response).
-  let wallet = { vp: null, radianite: null, kingdom: null };
-  try {
-    const wRes = await fetch(`https://pd.${shard}.a.pvp.net/store/v1/wallet/${puuid}`, { headers });
-    if (wRes.ok) {
-      const b = (await wRes.json()).Balances || {};
-      wallet = {
-        vp: b[VP_CURRENCY] ?? null,
-        radianite: b[RAD_CURRENCY] ?? null,
-        kingdom: b[KC_CURRENCY] ?? null,
-      };
-    }
-  } catch {
-    /* ignore wallet errors */
-  }
+  // Wallet + identity, both best-effort and run in parallel.
+  const [wallet, profile] = await Promise.all([
+    (async () => {
+      try {
+        const wRes = await fetch(`https://pd.${shard}.a.pvp.net/store/v1/wallet/${puuid}`, { headers });
+        if (wRes.ok) {
+          const b = (await wRes.json()).Balances || {};
+          return {
+            vp: b[VP_CURRENCY] ?? null,
+            radianite: b[RAD_CURRENCY] ?? null,
+            kingdom: b[KC_CURRENCY] ?? null,
+          };
+        }
+      } catch {
+        /* ignore wallet errors */
+      }
+      return { vp: null, radianite: null, kingdom: null };
+    })(),
+    fetchIdentity(headers, shard, puuid).catch(() => null),
+  ]);
 
-  return { status: 'ok', shop: { region, remaining, skins, wallet } };
+  return { status: 'ok', shop: { region, remaining, skins, wallet }, profile };
 }
