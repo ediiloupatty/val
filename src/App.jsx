@@ -7,6 +7,8 @@ import { TEXT } from './translations.js';
 // Code-split the trainer: Three.js (~500KB) only loads when entering the arena,
 // keeping the landing page fast to open.
 const AimTrainer = lazy(() => import('./AimTrainer.jsx'));
+// The store checker is a separate, optional feature — load it on demand too.
+const ShopChecker = lazy(() => import('./ShopChecker.jsx'));
 
 let toastSeq = 0;
 
@@ -68,7 +70,7 @@ function ToastContainer({ toasts }) {
 }
 
 export default function App() {
-  const [view, setView] = useState('landing'); // 'landing' | 'play'
+  const [view, setView] = useState('landing'); // 'landing' | 'play' | 'shop'
   const [lang, setLang] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('vat_settings'));
@@ -209,6 +211,7 @@ export default function App() {
       {view === 'landing' ? (
         <Landing
           onPlay={() => setView('play')}
+          onShop={() => setView('shop')}
           lang={lang}
           setLang={handleSetLang}
           isMobile={isMobile}
@@ -219,6 +222,16 @@ export default function App() {
           profileLoading={profileLoading}
           showToast={showToast}
         />
+      ) : view === 'shop' ? (
+        <Suspense
+          fallback={
+            <div className="flex h-[100dvh] w-screen items-center justify-center bg-val-dark">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-[#00e5c0]" />
+            </div>
+          }
+        >
+          <ShopChecker onExit={() => setView('landing')} />
+        </Suspense>
       ) : (
         <Suspense
           fallback={

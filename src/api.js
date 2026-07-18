@@ -205,6 +205,61 @@ export async function fetchDonations() {
 }
 
 /**
+ * Checks a user's VALORANT store via the Worker's unofficial-Riot proxy.
+ * Returns one of:
+ *   { ok: true, shop }                     — logged in, shop fetched
+ *   { ok: true, mfaRequired: true, ... }   — account has 2FA; call shopMfa next
+ *   { ok: false, error }                   — login failed
+ * The store login is slow (several upstream calls), so it gets a longer timeout.
+ */
+export async function shopLogin(username, password, turnstileToken) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/shop/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, turnstileToken }),
+      },
+      20000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      if (json.mfaRequired) {
+        return { ok: true, mfaRequired: true, mfaSession: json.mfaSession, email: json.email };
+      }
+      return { ok: true, shop: json.shop };
+    }
+    return { ok: false, error: json.error || 'Login gagal' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
+ * Completes a 2FA store login with the emailed code and the mfaSession token
+ * returned by shopLogin(). Returns { ok: true, shop } | { ok: false, error }.
+ */
+export async function shopMfa(mfaSession, code) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/shop/mfa`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfaSession, code }),
+      },
+      20000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) return { ok: true, shop: json.shop };
+    return { ok: false, error: json.error || 'Verifikasi 2FA gagal' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */

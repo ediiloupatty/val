@@ -50,7 +50,7 @@ const CONTACT = {
   github: 'https://github.com/ediiloupatty', // ← your profile
 };
 
-export default function Landing({ onPlay, lang, setLang, isMobile, name, setName, best, deviceId, profileLoading, showToast }) {
+export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name, setName, best, deviceId, profileLoading, showToast }) {
   const [panel, setPanel] = useState(null);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [tempName, setTempName] = useState(name);
@@ -465,6 +465,7 @@ export default function Landing({ onPlay, lang, setLang, isMobile, name, setName
           </span>
         </button>
 
+        {onShop && <MenuItem label={t.shop || 'Cek Toko'} onClick={onShop} />}
         <MenuItem label={t.leaderboard} onClick={() => setPanel('leaderboard')} />
         <MenuItem label={t.profile} onClick={() => setPanel('profile')} />
         <MenuItem label={t.settings} onClick={() => setPanel('settings')} />
