@@ -252,7 +252,7 @@ export async function fetchValorantOverview(tokens, turnstileToken) {
           turnstileToken,
         }),
       },
-      25000
+      30000
     );
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.success) return { ok: true, overview: json.overview };

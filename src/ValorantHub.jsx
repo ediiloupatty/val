@@ -146,9 +146,12 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     setLoginError('Sesi berakhir (token kadaluarsa ~1 jam). Silakan login lagi.');
   };
 
-  // Load the dashboard whenever we have a session but no overview yet.
+  // Load the dashboard when we get a session (login or a persisted one on mount).
+  // Depend on `session` ONLY — including the loading/overview state here would let
+  // this effect's cleanup cancel its own in-flight request the moment it flips
+  // `overviewLoading`, leaving the spinner stuck forever.
   useEffect(() => {
-    if (!session || overview || overviewLoading) return;
+    if (!session) return;
     let cancelled = false;
     (async () => {
       setOverviewLoading(true);
@@ -168,7 +171,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [session, overview, overviewLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadStore = async () => {
     if (store || storeLoading || !session) return;

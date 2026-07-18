@@ -173,6 +173,15 @@ function pdUrl(shard, path) {
   return `https://pd.${shard}.a.pvp.net${path}`;
 }
 
+// Resolve to `fallback` if `promise` doesn't settle within `ms`, so one slow
+// Riot endpoint can't stall the whole dashboard — it just yields partial data.
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 // --- data fetchers (each takes a prepared context) -------------------------
 async function getWallet(headers, shard, puuid) {
   try {
@@ -414,11 +423,11 @@ export async function fetchOverview(tokens) {
   const { headers, shard, puuid } = ctx;
 
   const [identity, wallet, inventory, account, battlepass] = await Promise.all([
-    getIdentity(headers, shard, puuid).catch(() => null),
-    getWallet(headers, shard, puuid),
-    getInventory(headers, shard, puuid).catch(() => null),
-    getAccount(headers, shard, puuid).catch(() => null),
-    getBattlepass(headers, shard, puuid).catch(() => null),
+    withTimeout(getIdentity(headers, shard, puuid).catch(() => null), 12000, null),
+    withTimeout(getWallet(headers, shard, puuid), 8000, { vp: null, radianite: null, kingdom: null }),
+    withTimeout(getInventory(headers, shard, puuid).catch(() => null), 12000, null),
+    withTimeout(getAccount(headers, shard, puuid).catch(() => null), 12000, null),
+    withTimeout(getBattlepass(headers, shard, puuid).catch(() => null), 12000, null),
   ]);
 
   return { status: 'ok', overview: { identity, wallet, inventory, account, battlepass } };
