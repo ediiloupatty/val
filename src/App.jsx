@@ -7,8 +7,8 @@ import { TEXT } from './translations.js';
 // Code-split the trainer: Three.js (~500KB) only loads when entering the arena,
 // keeping the landing page fast to open.
 const AimTrainer = lazy(() => import('./AimTrainer.jsx'));
-// The store checker is a separate, optional feature — load it on demand too.
-const ShopChecker = lazy(() => import('./ShopChecker.jsx'));
+// The Valorant account hub is a separate, optional feature — load it on demand.
+const ValorantHub = lazy(() => import('./ValorantHub.jsx'));
 
 let toastSeq = 0;
 
@@ -172,6 +172,18 @@ export default function App() {
     if (identity.displayName) handleSetName(identity.displayName.slice(0, 20));
   };
 
+  // Logout from the Valorant hub: drop the cached identity display. (The token
+  // session itself is cleared inside the hub.) The leaderboard name keeps its
+  // last value — it's editable in the profile panel.
+  const handleValorantLogout = () => {
+    setValorantProfile(null);
+    try {
+      localStorage.removeItem(VALORANT_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleSetBest = (updater) => {
     setBest((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -240,7 +252,7 @@ export default function App() {
       {view === 'landing' ? (
         <Landing
           onPlay={() => setView('play')}
-          onShop={() => setView('shop')}
+          onShop={() => setView('valorant')}
           lang={lang}
           setLang={handleSetLang}
           isMobile={isMobile}
@@ -252,7 +264,7 @@ export default function App() {
           showToast={showToast}
           valorantProfile={valorantProfile}
         />
-      ) : view === 'shop' ? (
+      ) : view === 'valorant' ? (
         <Suspense
           fallback={
             <div className="flex h-[100dvh] w-screen items-center justify-center bg-val-dark">
@@ -260,7 +272,11 @@ export default function App() {
             </div>
           }
         >
-          <ShopChecker onExit={() => setView('landing')} onIdentity={handleValorantIdentity} />
+          <ValorantHub
+            onExit={() => setView('landing')}
+            onIdentity={handleValorantIdentity}
+            onLogout={handleValorantLogout}
+          />
         </Suspense>
       ) : (
         <Suspense

@@ -205,26 +205,58 @@ export async function fetchDonations() {
 }
 
 /**
- * Checks a user's VALORANT store. `redirectUrl` is the URL the user copied from
- * their browser after logging in on Riot's own page (it carries the tokens in
- * its fragment). The Worker extracts the tokens and reads the store.
- * Returns { ok: true, shop } | { ok: false, error }.
+ * Fetches the daily store (+ night market when active) using stored session
+ * tokens. Returns { ok, shop, nightMarket, profile } | { ok: false, error }.
  * Several upstream Riot calls run server-side, so this gets a longer timeout.
  */
-export async function fetchShop(redirectUrl, turnstileToken) {
+export async function fetchShop(tokens, turnstileToken) {
   try {
     const res = await fetchWithTimeout(
       `${API_URL}/api/shop/store`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: redirectUrl, turnstileToken }),
+        body: JSON.stringify({
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+          turnstileToken,
+        }),
       },
-      20000
+      25000
     );
     const json = await res.json().catch(() => ({}));
-    if (res.ok && json.success) return { ok: true, shop: json.shop, profile: json.profile };
+    if (res.ok && json.success) {
+      return { ok: true, shop: json.shop, nightMarket: json.nightMarket, profile: json.profile };
+    }
     return { ok: false, error: json.error || 'Gagal mengambil toko' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
+ * Fetches the account hub dashboard (identity, wallet, inventory summary,
+ * account stats, battlepass) using stored session tokens.
+ * Returns { ok: true, overview } | { ok: false, error }.
+ */
+export async function fetchValorantOverview(tokens, turnstileToken) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/valorant/overview`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+          turnstileToken,
+        }),
+      },
+      25000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) return { ok: true, overview: json.overview };
+    return { ok: false, error: json.error || 'Gagal mengambil data akun' };
   } catch (err) {
     return { ok: false, error: 'Tidak bisa terhubung ke server' };
   }

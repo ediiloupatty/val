@@ -1,4 +1,4 @@
-import { fetchShop as riotFetchShop, extractTokens } from './riot.js';
+import { fetchShop as riotFetchShop, fetchOverview as riotFetchOverview, extractTokens } from './riot.js';
 
 // Origins allowed to call this API.
 const ALLOWED_ORIGINS = [
@@ -898,7 +898,7 @@ export default {
         const result = await riotFetchShop(tokens);
         if (result.status === "ok") {
           return new Response(
-            JSON.stringify({ success: true, shop: result.shop, profile: result.profile }),
+            JSON.stringify({ success: true, shop: result.shop, nightMarket: result.nightMarket, profile: result.profile }),
             { headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
@@ -910,6 +910,45 @@ export default {
         console.error("shop store error:", err);
         return new Response(
           JSON.stringify({ success: false, error: "Gagal mengambil toko" }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
+    // POST /api/valorant/overview — the hub dashboard. Body: { accessToken,
+    // idToken } (tokens the browser extracted from the redirect and stored).
+    // Returns identity, wallet, inventory summary, account stats, battlepass.
+    if (path === "/api/valorant/overview" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const tokens = { accessToken: body.accessToken, idToken: body.idToken || "" };
+        if (!tokens.accessToken) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Sesi tidak valid — login ulang." }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        if (!(await shopRateOk(env, request))) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
+            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        const result = await riotFetchOverview(tokens);
+        if (result.status === "ok") {
+          return new Response(
+            JSON.stringify({ success: true, overview: result.overview }),
+            { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: false, error: result.error }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        console.error("valorant overview error:", err);
+        return new Response(
+          JSON.stringify({ success: false, error: "Gagal mengambil data akun" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }

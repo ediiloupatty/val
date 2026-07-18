@@ -1,14 +1,13 @@
-// riot.js — VALORANT storefront client for the Worker (OAuth implicit flow).
+// riot.js — VALORANT account client for the Worker (OAuth implicit flow).
 //
-// We do NOT take the user's password. Instead the user logs in on Riot's own
-// page via the official `riot-client` OAuth client, which permits a localhost
-// redirect. Riot then redirects to http://localhost/redirect#access_token=...
-// The user copies that URL; we extract the tokens and use them to read the
-// store. This sidesteps Riot's hCaptcha wall entirely (Riot's page handles the
-// captcha + 2FA) and the password never touches our server.
+// We do NOT take the user's password. The user logs in on Riot's own page via
+// the official `riot-client` OAuth client (which permits a localhost redirect),
+// then pastes the redirect URL. We extract the tokens and use them to read the
+// store, inventory, battlepass, and account data. This sidesteps Riot's hCaptcha
+// wall entirely and the password never touches our server.
 //
-// The access token is short-lived (~1h) and only used to read the store, so we
-// don't persist anything.
+// The access token is short-lived (~1h). We never persist it server-side; the
+// browser holds it and sends it on each request until it expires or logout.
 
 const ENTITLEMENT_URL = 'https://entitlements.auth.riotgames.com/api/token/v1';
 const GEO_URL = 'https://riot-geo.pas.si.riotgames.com/pas/v1/product/valorant';
@@ -25,10 +24,20 @@ export const AUTH_URL =
   '&scope=openid%20link%20ban%20lol_region%20account' +
   '&prompt=login';
 
-// Currency UUIDs used in wallet balances / store offer costs.
+// Currency UUIDs.
 const VP_CURRENCY = '85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741';   // Valorant Points
 const RAD_CURRENCY = 'e59aa87c-4cbf-517a-5983-6e81511be9b7';  // Radianite
 const KC_CURRENCY = '85ca954a-41f2-ce94-9b45-8ca3dd39a00d';   // Kingdom Credits
+
+// Entitlement item-type UUIDs (what "count owned" queries against).
+const ITEM_TYPES = {
+  agents: '01bb38e1-da47-4e6a-9b3d-945fe4655707',
+  skins: 'e7c63390-eda7-46e0-bb7a-a6abdacd2433', // skin *levels*
+  sprays: 'd5f120f8-ff8c-4aac-92ea-f2b5acbe9475',
+  buddies: 'dd3bf334-87f3-40bd-b043-682a57a8dc3a',
+  cards: '3f296c07-64c3-494c-923b-fe692a4fa1bd',
+  titles: 'de7caa6b-adf7-4588-bbd1-143831e786c6',
+};
 
 // Static client descriptor Riot expects in X-Riot-ClientPlatform (base64 JSON).
 const CLIENT_PLATFORM = btoa(JSON.stringify({
@@ -38,17 +47,13 @@ const CLIENT_PLATFORM = btoa(JSON.stringify({
   platformChipset: 'Unknown',
 }));
 
-// Fallback build string if valorant-api.com is unreachable. The store endpoint
-// tolerates a slightly stale X-Riot-ClientVersion, so this keeps things working.
 const FALLBACK_VERSION = 'release-09.00-shipping-9-2444158';
 
-// region -> shard mapping for the pd.<shard>.a.pvp.net data endpoints.
 function shardFor(region) {
   if (region === 'latam' || region === 'br') return 'na';
   return region; // na, eu, ap, kr
 }
 
-// Decode a JWT payload segment (base64url, no signature check — we only read it).
 function jwtPayload(token) {
   const seg = (token || '').split('.')[1] || '';
   const pad = seg.length % 4 ? '='.repeat(4 - (seg.length % 4)) : '';
@@ -56,7 +61,6 @@ function jwtPayload(token) {
 }
 
 // Pull access_token + id_token out of a pasted redirect URL (or bare fragment).
-// The redirect looks like: http://localhost/redirect#access_token=...&id_token=...
 export function extractTokens(url) {
   const raw = String(url || '');
   const frag = raw.includes('#') ? raw.slice(raw.indexOf('#') + 1) : raw;
@@ -74,8 +78,6 @@ async function clientVersion() {
   }
 }
 
-// Resolve a skin-level UUID to a display name + icon via the community
-// valorant-api.com (a legal, stable metadata source).
 async function resolveSkin(levelId) {
   try {
     const res = await fetch(`${VAPI}/weapons/skinlevels/${levelId}`);
@@ -86,15 +88,13 @@ async function resolveSkin(levelId) {
   }
 }
 
-// Resolve a competitive-tier number (0..27) into a name/icon/color via the
-// community API. 0 (or unknown) => Unranked.
 async function resolveRank(tier) {
   if (!tier || tier <= 0) return { tier: 0, name: 'Unranked', icon: null, color: null };
   try {
     const res = await fetch(`${VAPI}/competitivetiers`);
     const j = await res.json();
     const episodes = j.data || [];
-    const current = episodes[episodes.length - 1]; // latest tier set
+    const current = episodes[episodes.length - 1];
     const t = (current?.tiers || []).find((x) => x.tier === tier);
     if (!t) return { tier, name: 'Unranked', icon: null, color: null };
     return {
@@ -108,35 +108,100 @@ async function resolveRank(tier) {
   }
 }
 
-// Fetch the player's VALORANT identity: name#tag, player-card avatar, account
-// level, and current rank. Every sub-call is best-effort — a failure just leaves
-// that field null rather than sinking the whole profile.
-async function fetchIdentity(headers, shard, puuid) {
-  const base = `https://pd.${shard}.a.pvp.net`;
-  const [nameData, loadout, mmr] = await Promise.all([
-    fetch(`${base}/name-service/v2/players`, {
+// --- shared setup ----------------------------------------------------------
+// Given the redirect tokens, obtain entitlement + region + a ready header set.
+// Returns { ok: true, headers, shard, puuid } | { ok: false, error }.
+async function prepare({ accessToken, idToken }) {
+  if (!accessToken) return { ok: false, error: 'Token tidak ditemukan di URL' };
+
+  const entRes = await fetch(ENTITLEMENT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({}),
+  });
+  if (!entRes.ok) {
+    return {
+      ok: false,
+      error:
+        entRes.status === 401 || entRes.status === 400
+          ? 'expired'
+          : `Gagal ambil entitlement (HTTP ${entRes.status})`,
+    };
+  }
+  const entData = await entRes.json().catch(() => ({}));
+  const entitlement = entData.entitlements_token;
+  if (!entitlement) return { ok: false, error: 'Gagal mengambil entitlement token' };
+
+  let puuid;
+  try {
+    puuid = jwtPayload(accessToken).sub;
+  } catch {
+    return { ok: false, error: 'Token login tidak valid' };
+  }
+  if (!puuid) return { ok: false, error: 'Gagal membaca PUUID akun' };
+
+  let region = 'na';
+  try {
+    const geoRes = await fetch(GEO_URL, {
       method: 'PUT',
-      headers,
-      body: JSON.stringify([puuid]),
-    }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    fetch(`${base}/personalization/v2/players/${puuid}/playerloadout`, { headers })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-    fetch(`${base}/mmr/v1/players/${puuid}`, { headers })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    const geo = await geoRes.json().catch(() => ({}));
+    region = geo.affinities?.live || 'na';
+  } catch {
+    /* fall back to na */
+  }
+  const version = await clientVersion();
+
+  return {
+    ok: true,
+    shard: shardFor(region),
+    region,
+    puuid,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      'X-Riot-Entitlements-JWT': entitlement,
+      'X-Riot-ClientPlatform': CLIENT_PLATFORM,
+      'X-Riot-ClientVersion': version,
+    },
+  };
+}
+
+function pdUrl(shard, path) {
+  return `https://pd.${shard}.a.pvp.net${path}`;
+}
+
+// --- data fetchers (each takes a prepared context) -------------------------
+async function getWallet(headers, shard, puuid) {
+  try {
+    const res = await fetch(pdUrl(shard, `/store/v1/wallet/${puuid}`), { headers });
+    if (!res.ok) return { vp: null, radianite: null, kingdom: null };
+    const b = (await res.json()).Balances || {};
+    return { vp: b[VP_CURRENCY] ?? null, radianite: b[RAD_CURRENCY] ?? null, kingdom: b[KC_CURRENCY] ?? null };
+  } catch {
+    return { vp: null, radianite: null, kingdom: null };
+  }
+}
+
+async function getIdentity(headers, shard, puuid) {
+  const [nameData, loadout, mmr] = await Promise.all([
+    fetch(pdUrl(shard, '/name-service/v2/players'), { method: 'PUT', headers, body: JSON.stringify([puuid]) })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(pdUrl(shard, `/personalization/v2/players/${puuid}/playerloadout`), { headers })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(pdUrl(shard, `/mmr/v1/players/${puuid}`), { headers })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
 
   const nm = Array.isArray(nameData) ? nameData[0] : null;
   const gameName = nm?.GameName || null;
   const tagLine = nm?.TagLine || null;
-
   const cardId = loadout?.Identity?.PlayerCardID || null;
   const card = cardId ? `https://media.valorant-api.com/playercards/${cardId}/smallart.png` : null;
   const level = loadout?.Identity?.AccountLevel || null;
 
-  // Current rank = the tier from the most recent competitive game; if that's
-  // empty (no recent comp), fall back to the peak tier across seasons.
   let tier = mmr?.LatestCompetitiveUpdate?.TierAfterUpdate || 0;
   const seasons = mmr?.QueueSkills?.competitive?.SeasonalInfoBySeasonID;
   if (!tier && seasons) {
@@ -154,65 +219,133 @@ async function fetchIdentity(headers, shard, puuid) {
   };
 }
 
-// Given the tokens from the redirect, fetch entitlement/region/store/wallet plus
-// the player's identity (name#tag, avatar, level, rank).
-// Returns { status: 'ok', shop, profile } | { status: 'error', error }.
-export async function fetchShop({ accessToken, idToken }) {
-  if (!accessToken) return { status: 'error', error: 'Token tidak ditemukan di URL' };
-
-  // Entitlement token — required alongside the access token for game endpoints.
-  const entRes = await fetch(ENTITLEMENT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({}),
-  });
-  if (!entRes.ok) {
-    return {
-      status: 'error',
-      error:
-        entRes.status === 401 || entRes.status === 400
-          ? 'Token sudah kadaluarsa. Login ulang lewat Riot.'
-          : `Gagal ambil entitlement (HTTP ${entRes.status})`,
-    };
-  }
-  const entData = await entRes.json().catch(() => ({}));
-  const entitlement = entData.entitlements_token;
-  if (!entitlement) return { status: 'error', error: 'Gagal mengambil entitlement token' };
-
-  let puuid;
+// Owned ItemIDs for one entitlement type.
+async function getEntitlements(headers, shard, puuid, itemTypeId) {
   try {
-    puuid = jwtPayload(accessToken).sub;
+    const res = await fetch(pdUrl(shard, `/store/v1/entitlements/${puuid}/${itemTypeId}`), { headers });
+    if (!res.ok) return [];
+    const j = await res.json();
+    return (j.Entitlements || []).map((e) => e.ItemID);
   } catch {
-    return { status: 'error', error: 'Token login tidak valid' };
+    return [];
   }
-  if (!puuid) return { status: 'error', error: 'Gagal membaca PUUID akun' };
+}
 
-  // Region/shard via the PAS (geo affinity) token.
-  let region = 'na';
+// Map of purchasable skin -> VP cost, from the full offers list.
+async function getOffersMap(headers, shard) {
+  const map = {};
   try {
-    const geoRes = await fetch(GEO_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ id_token: idToken }),
-    });
-    const geo = await geoRes.json().catch(() => ({}));
-    region = geo.affinities?.live || 'na';
+    const res = await fetch(pdUrl(shard, '/store/v1/offers/'), { headers });
+    if (!res.ok) return map;
+    const offers = (await res.json()).Offers || [];
+    for (const o of offers) {
+      const cost = o.Cost?.[VP_CURRENCY];
+      if (cost == null) continue;
+      if (o.OfferID) map[o.OfferID] = cost;
+      const rewardId = o.Rewards?.[0]?.ItemID;
+      if (rewardId) map[rewardId] = cost;
+    }
   } catch {
-    /* fall back to na */
+    /* ignore */
   }
-  const shard = shardFor(region);
-  const version = await clientVersion();
+  return map;
+}
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${accessToken}`,
-    'X-Riot-Entitlements-JWT': entitlement,
-    'X-Riot-ClientPlatform': CLIENT_PLATFORM,
-    'X-Riot-ClientVersion': version,
+// Skin inventory summary: count of priced skins owned + total VP value.
+async function getInventory(headers, shard, puuid) {
+  const [owned, offers] = await Promise.all([
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
+    getOffersMap(headers, shard),
+  ]);
+  let collectionValueVp = 0;
+  let pricedSkinCount = 0;
+  for (const id of owned) {
+    const cost = offers[id];
+    if (cost != null) {
+      collectionValueVp += cost;
+      pricedSkinCount += 1;
+    }
+  }
+  return {
+    totalSkinEntitlements: owned.length,
+    pricedSkinCount,
+    collectionValueVp,
   };
+}
 
-  // Daily storefront (v3 requires a POST with a body).
-  const storeRes = await fetch(`https://pd.${shard}.a.pvp.net/store/v3/storefront/${puuid}`, {
+async function getAccount(headers, shard, puuid) {
+  const [xp, agents, sprays, cards, buddies, titles] = await Promise.all([
+    fetch(pdUrl(shard, `/account-xp/v1/players/${puuid}`), { headers })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.agents),
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.sprays),
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.cards),
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.buddies),
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.titles),
+  ]);
+  return {
+    level: xp?.Progress?.Level ?? null,
+    xp: xp?.Progress?.XP ?? null,
+    agentCount: agents.length,
+    sprayCount: sprays.length,
+    cardCount: cards.length,
+    buddyCount: buddies.length,
+    titleCount: titles.length,
+  };
+}
+
+// Current battlepass tier + total tiers. Best-effort: identifies the active
+// battlepass contract by matching the current act via the community API.
+async function getBattlepass(headers, shard, puuid) {
+  try {
+    const [contractsRes, seasons, defs] = await Promise.all([
+      fetch(pdUrl(shard, `/contracts/v1/contracts/${puuid}`), { headers })
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch(`${VAPI}/seasons`).then((r) => r.json()).catch(() => null),
+      fetch(`${VAPI}/contracts`).then((r) => r.json()).catch(() => null),
+    ]);
+    if (!contractsRes?.Contracts || !seasons?.data || !defs?.data) return null;
+
+    const now = Date.now();
+    // Current act = a season with a parent (acts nest under episodes) that's live now.
+    const act = seasons.data.find(
+      (s) => s.parentUuid && Date.parse(s.startTime) <= now && now <= Date.parse(s.endTime)
+    );
+    if (!act) return null;
+
+    const def = defs.data.find(
+      (c) => c.content?.relationType === 'Season' && c.content?.relationUuid === act.uuid
+    );
+    if (!def) return null;
+
+    const owned = contractsRes.Contracts.find((c) => c.ContractDefinitionID === def.uuid);
+    if (!owned) return { tier: 0, totalLevels: 50, name: def.displayName || 'Battlepass' };
+
+    const totalLevels = (def.content?.chapters || []).reduce(
+      (sum, ch) => sum + (ch.levels?.length || 0),
+      0
+    );
+    return {
+      tier: owned.ProgressionLevelReached || 0,
+      totalLevels: totalLevels || 50,
+      name: def.displayName || 'Battlepass',
+    };
+  } catch {
+    return null;
+  }
+}
+
+// --- public entry points ---------------------------------------------------
+// The daily store (+ night market when active) + wallet + identity.
+// Returns { status: 'ok', shop, nightMarket, wallet, profile } | { status: 'error', error }.
+export async function fetchShop(tokens) {
+  const ctx = await prepare(tokens);
+  if (!ctx.ok) {
+    return { status: 'error', error: ctx.error === 'expired' ? 'Token sudah kadaluarsa. Login ulang lewat Riot.' : ctx.error };
+  }
+  const { headers, shard, puuid, region } = ctx;
+
+  const storeRes = await fetch(pdUrl(shard, `/store/v3/storefront/${puuid}`), {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -222,44 +355,71 @@ export async function fetchShop({ accessToken, idToken }) {
   }
   const store = await storeRes.json();
 
+  // Daily featured skins.
   const panel = store.SkinsPanelLayout || {};
-  const offers = panel.SingleItemStoreOffers || [];
-  const remaining = panel.SingleItemOffersRemainingDurationInSeconds || 0;
-
+  const dailyOffers = panel.SingleItemStoreOffers || [];
   const skins = await Promise.all(
-    offers.map(async (offer) => {
-      // The real skin UUID is usually in Rewards[0].ItemID; fall back to OfferID.
+    dailyOffers.map(async (offer) => {
       const itemId = offer.Rewards?.[0]?.ItemID || offer.OfferID;
       const meta = await resolveSkin(itemId);
-      return {
-        id: offer.OfferID || itemId,
-        name: meta.name,
-        image: meta.image,
-        price: offer.Cost?.[VP_CURRENCY] ?? null,
-      };
+      return { id: offer.OfferID || itemId, name: meta.name, image: meta.image, price: offer.Cost?.[VP_CURRENCY] ?? null };
     })
   );
 
-  // Wallet + identity, both best-effort and run in parallel.
-  const [wallet, profile] = await Promise.all([
-    (async () => {
-      try {
-        const wRes = await fetch(`https://pd.${shard}.a.pvp.net/store/v1/wallet/${puuid}`, { headers });
-        if (wRes.ok) {
-          const b = (await wRes.json()).Balances || {};
+  // Night market (BonusStore) — only present when the event is active.
+  let nightMarket = null;
+  const bonus = store.BonusStore;
+  if (bonus?.BonusStoreOffers?.length) {
+    nightMarket = {
+      remaining: bonus.BonusStoreRemainingDurationInSeconds || 0,
+      items: await Promise.all(
+        bonus.BonusStoreOffers.map(async (b) => {
+          const off = b.Offer || {};
+          const itemId = off.Rewards?.[0]?.ItemID || off.OfferID;
+          const meta = await resolveSkin(itemId);
           return {
-            vp: b[VP_CURRENCY] ?? null,
-            radianite: b[RAD_CURRENCY] ?? null,
-            kingdom: b[KC_CURRENCY] ?? null,
+            id: off.OfferID || itemId,
+            name: meta.name,
+            image: meta.image,
+            basePrice: off.Cost?.[VP_CURRENCY] ?? null,
+            discountPrice: b.DiscountCosts?.[VP_CURRENCY] ?? null,
+            discountPercent: b.DiscountPercent ?? null,
           };
-        }
-      } catch {
-        /* ignore wallet errors */
-      }
-      return { vp: null, radianite: null, kingdom: null };
-    })(),
-    fetchIdentity(headers, shard, puuid).catch(() => null),
+        })
+      ),
+    };
+  }
+
+  const [wallet, profile] = await Promise.all([
+    getWallet(headers, shard, puuid),
+    getIdentity(headers, shard, puuid).catch(() => null),
   ]);
 
-  return { status: 'ok', shop: { region, remaining, skins, wallet }, profile };
+  return {
+    status: 'ok',
+    shop: { region, remaining: panel.SingleItemOffersRemainingDurationInSeconds || 0, skins, wallet },
+    nightMarket,
+    wallet,
+    profile,
+  };
+}
+
+// The hub dashboard: identity, wallet, inventory summary, account, battlepass.
+// Returns { status: 'ok', overview } | { status: 'error', error }.
+export async function fetchOverview(tokens) {
+  const ctx = await prepare(tokens);
+  if (!ctx.ok) {
+    return { status: 'error', error: ctx.error === 'expired' ? 'Token sudah kadaluarsa. Login ulang lewat Riot.' : ctx.error };
+  }
+  const { headers, shard, puuid } = ctx;
+
+  const [identity, wallet, inventory, account, battlepass] = await Promise.all([
+    getIdentity(headers, shard, puuid).catch(() => null),
+    getWallet(headers, shard, puuid),
+    getInventory(headers, shard, puuid).catch(() => null),
+    getAccount(headers, shard, puuid).catch(() => null),
+    getBattlepass(headers, shard, puuid).catch(() => null),
+  ]);
+
+  return { status: 'ok', overview: { identity, wallet, inventory, account, battlepass } };
 }
