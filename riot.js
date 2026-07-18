@@ -245,8 +245,11 @@ async function getOffersMap(headers, shard) {
   const map = {};
   try {
     const res = await fetch(pdUrl(shard, '/store/v1/offers/'), { headers });
+    console.log('offers fetch status:', res.status);
     if (!res.ok) return map;
-    const offers = (await res.json()).Offers || [];
+    const body = await res.json();
+    const offers = body.Offers || body.offers || [];
+    console.log('offers count raw:', offers.length);
     for (const o of offers) {
       const cost = o.Cost?.[VP_CURRENCY];
       if (cost == null) continue;
@@ -279,6 +282,7 @@ async function getInventory(headers, shard, puuid) {
     totalSkinEntitlements: owned.length,
     pricedSkinCount,
     collectionValueVp,
+    offersCount: Object.keys(offers).length, // diagnostic: how many priced items loaded
   };
 }
 

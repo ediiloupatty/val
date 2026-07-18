@@ -345,6 +345,9 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                           (dari {vp(overview.inventory.totalSkinEntitlements)} entitlement). Ini <b className="text-slate-300">bukan</b> uang asli yang dikeluarkan —
                           skin gratis/battlepass/event tidak punya harga toko jadi tidak terhitung.
                         </p>
+                        {overview.inventory.offersCount != null && (
+                          <p className="mt-1 text-[10px] text-slate-500">debug · daftar harga dimuat: {vp(overview.inventory.offersCount)} item</p>
+                        )}
                       </div>
                     ) : (
                       <div className="rounded-2xl border border-white/10 bg-val-panel p-4 text-sm text-slate-400">
