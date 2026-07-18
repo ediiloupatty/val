@@ -75,13 +75,22 @@ export async function fetchProfile(deviceId) {
  */
 export async function saveProfile(deviceId, name, best) {
   if (!deviceId) return { ok: false };
+  // The server rejects the whole save if any best stat isn't a finite number
+  // (e.g. a partial cached profile with a missing `split`). Normalise so that
+  // saving a name never fails on an incomplete best.
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const safeBest = {
+    score: num(best?.score),
+    accuracy: num(best?.accuracy),
+    split: num(best?.split),
+  };
   try {
     const res = await fetchWithTimeout(`${API_URL}/api/profile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ deviceId, name, best }),
+      body: JSON.stringify({ deviceId, name, best: safeBest }),
     });
     if (!res.ok) {
       console.warn('[API] Worker responded with status:', res.status);

@@ -329,11 +329,26 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                       )}
                     </div>
 
-                    {/* Inventory / collection value */}
-                    {overview.inventory && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <StatCard label="Skin dimiliki" value={vp(overview.inventory.pricedSkinCount)} sub={`${vp(overview.inventory.totalSkinEntitlements)} total termasuk varian/level`} />
-                        <StatCard label="Nilai koleksi (est.)" value={`${vp(overview.inventory.collectionValueVp)} VP`} sub="Total harga toko skin yang dipunya" />
+                    {/* Estimated total VP value of the skin collection (hero card) */}
+                    {overview.inventory ? (
+                      <div className="rounded-2xl border border-val-accent/40 bg-gradient-to-br from-val-accent/15 to-transparent p-5">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-val-accent">Estimasi Total VP Skin</p>
+                        <div className="mt-1 flex items-end gap-2">
+                          <img src={VP_ICON} alt="VP" className="mb-1.5 h-7 w-7" />
+                          <span className="text-4xl font-black leading-none tabular-nums text-white">
+                            {vp(overview.inventory.collectionValueVp)}
+                          </span>
+                          <span className="mb-1 text-sm font-bold text-slate-400">VP</span>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                          Perkiraan dari total harga toko <b className="text-slate-300">{vp(overview.inventory.pricedSkinCount)} skin</b> yang kamu miliki
+                          (dari {vp(overview.inventory.totalSkinEntitlements)} entitlement). Ini <b className="text-slate-300">bukan</b> uang asli yang dikeluarkan —
+                          skin gratis/battlepass/event tidak punya harga toko jadi tidak terhitung.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 text-sm text-slate-400">
+                        Data inventory tidak tersedia (mungkin timeout dari Riot). Coba buka lagi menu ini.
                       </div>
                     )}
 
