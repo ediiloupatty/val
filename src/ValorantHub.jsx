@@ -28,25 +28,25 @@ function isExpiredError(msg) {
 
 function StatCard({ label, value, sub }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-val-panel p-4">
+    <div className="rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-black tabular-nums text-white">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
+      <p className="mt-1 text-xl font-black tabular-nums text-white sm:text-2xl">{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-slate-400 sm:text-xs">{sub}</p>}
     </div>
   );
 }
 
 function SkinCard({ skin }) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-val-panel p-5 transition-colors hover:border-val-accent/40">
-      <div className="flex min-h-[7rem] items-center justify-center">
+    <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-val-panel p-4 transition-colors hover:border-val-accent/40 sm:p-5">
+      <div className="flex min-h-[6rem] items-center justify-center sm:min-h-[7rem]">
         {skin.image ? (
-          <img src={skin.image} alt={skin.name} className="max-h-28 w-full object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-105" loading="lazy" />
+          <img src={skin.image} alt={skin.name} className="max-h-24 w-full object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-105 sm:max-h-28" loading="lazy" />
         ) : (
           <div className="h-24 w-full rounded-lg bg-white/5" />
         )}
       </div>
-      <p className="mt-4 text-sm font-bold uppercase tracking-wide text-white">{skin.name}</p>
+      <p className="mt-3 text-sm font-bold uppercase tracking-wide text-white sm:mt-4">{skin.name}</p>
       <div className="mt-2 flex items-center gap-3">
         {skin.discountPrice != null ? (
           <>
@@ -74,29 +74,29 @@ function SkinCard({ skin }) {
 
 function IdentityHeader({ identity, onLogout }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-4">
-      {identity?.card && <img src={identity.card} alt="" className="h-12 w-12 rounded-lg object-cover" />}
+    <div className="flex items-center gap-2.5 rounded-2xl border border-white/10 bg-val-panel p-3 sm:gap-3 sm:p-4">
+      {identity?.card && <img src={identity.card} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover sm:h-12 sm:w-12" />}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-black text-white">{identity?.displayName || 'Pemain'}</p>
-        <div className="mt-0.5 flex items-center gap-3">
+        <p className="truncate text-sm font-black text-white sm:text-base">{identity?.displayName || 'Pemain'}</p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
           {identity?.level != null && (
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Lv {identity.level}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 sm:text-xs">Lv {identity.level}</span>
           )}
           {identity?.rank?.name && identity.rank.name !== 'Unranked' ? (
             <span className="flex items-center gap-1.5">
-              {identity.rank.icon && <img src={identity.rank.icon} alt="" className="h-5 w-5" />}
-              <span className="text-xs font-bold uppercase tracking-wider" style={identity.rank.color ? { color: identity.rank.color } : undefined}>
+              {identity.rank.icon && <img src={identity.rank.icon} alt="" className="h-4 w-4 sm:h-5 sm:w-5" />}
+              <span className="text-[11px] font-bold uppercase tracking-wider sm:text-xs" style={identity.rank.color ? { color: identity.rank.color } : undefined}>
                 {identity.rank.name}
               </span>
             </span>
           ) : (
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Unranked</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">Unranked</span>
           )}
         </div>
       </div>
       <button
         onClick={onLogout}
-        className="shrink-0 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-300 transition-colors hover:border-val-red/50 hover:text-val-red"
+        className="shrink-0 rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-300 transition-colors hover:border-val-red/50 hover:text-val-red sm:px-4 sm:py-2 sm:text-xs"
       >
         Logout
       </button>
@@ -233,8 +233,8 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
   };
 
   return (
-    <div className="min-h-[100dvh] w-screen bg-val-dark text-white">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-4xl flex-col px-5 py-6 sm:px-8">
+    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-val-dark text-white">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-4xl flex-col px-4 py-5 sm:px-8 sm:py-6">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <button onClick={onExit} className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-white">
@@ -299,8 +299,8 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
           <div className="flex flex-col gap-5">
             <IdentityHeader identity={overview?.identity} onLogout={doLogout} />
 
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-white/10">
+            {/* Tabs — horizontally scrollable on narrow screens */}
+            <div className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto border-b border-white/10 px-4 sm:mx-0 sm:gap-2 sm:px-0">
               {[
                 ['dashboard', 'Dashboard'],
                 ['inventory', 'Inventory'],
@@ -310,7 +310,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                 <button
                   key={key}
                   onClick={() => goTab(key)}
-                  className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-bold uppercase tracking-wider transition-colors ${
+                  className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors sm:px-4 sm:text-sm ${
                     tab === key ? 'border-val-accent text-white' : 'border-transparent text-slate-400 hover:text-white'
                   }`}
                 >
@@ -327,26 +327,26 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                 {overview && (
                   <div className="flex flex-col gap-5">
                     {/* Wallet */}
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-4">
-                        <img src={VP_ICON} alt="VP" className="h-6 w-6" />
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Valorant Points</p>
-                          <p className="text-lg font-black tabular-nums text-val-accent">{vp(overview.wallet?.vp)}</p>
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
+                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
+                        <img src={VP_ICON} alt="VP" className="h-6 w-6 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Valorant Points</p>
+                          <p className="truncate text-base font-black tabular-nums text-val-accent sm:text-lg">{vp(overview.wallet?.vp)}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-4">
-                        <img src={RAD_ICON} alt="RP" className="h-6 w-6" />
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Radianite</p>
-                          <p className="text-lg font-black tabular-nums text-white">{vp(overview.wallet?.radianite)}</p>
+                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
+                        <img src={RAD_ICON} alt="RP" className="h-6 w-6 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Radianite</p>
+                          <p className="truncate text-base font-black tabular-nums text-white sm:text-lg">{vp(overview.wallet?.radianite)}</p>
                         </div>
                       </div>
                       {overview.wallet?.kingdom != null && (
-                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-4">
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Kingdom Credits</p>
-                            <p className="text-lg font-black tabular-nums text-white">{vp(overview.wallet.kingdom)}</p>
+                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
+                          <div className="min-w-0">
+                            <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Kingdom Credits</p>
+                            <p className="truncate text-base font-black tabular-nums text-white sm:text-lg">{vp(overview.wallet.kingdom)}</p>
                           </div>
                         </div>
                       )}
@@ -354,14 +354,14 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
 
                     {/* Estimated total VP value of the skin collection (hero card) */}
                     {overview.inventory ? (
-                      <div className="rounded-2xl border border-val-accent/40 bg-gradient-to-br from-val-accent/15 to-transparent p-5">
+                      <div className="rounded-2xl border border-val-accent/40 bg-gradient-to-br from-val-accent/15 to-transparent p-4 sm:p-5">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-val-accent">Estimasi Total VP Skin</p>
                         <div className="mt-1 flex items-end gap-2">
-                          <img src={VP_ICON} alt="VP" className="mb-1.5 h-7 w-7" />
-                          <span className="text-4xl font-black leading-none tabular-nums text-white">
+                          <img src={VP_ICON} alt="VP" className="mb-1 h-6 w-6 shrink-0 sm:mb-1.5 sm:h-7 sm:w-7" />
+                          <span className="text-3xl font-black leading-none tabular-nums text-white sm:text-4xl">
                             {vp(overview.inventory.collectionValueVp)}
                           </span>
-                          <span className="mb-1 text-sm font-bold text-slate-400">VP</span>
+                          <span className="mb-0.5 text-sm font-bold text-slate-400 sm:mb-1">VP</span>
                         </div>
                         <p className="mt-2 text-xs leading-relaxed text-slate-400">
                           Estimasi dari <b className="text-slate-300">{vp(overview.inventory.pricedSkinCount)} skin berharga</b> yang kamu miliki
@@ -434,9 +434,9 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                           style={s.tierColor ? { borderColor: `${s.tierColor}55` } : undefined}
                         >
                           {s.image ? (
-                            <img src={s.image} alt="" className="h-10 w-24 shrink-0 object-contain" loading="lazy" />
+                            <img src={s.image} alt="" className="h-9 w-20 shrink-0 object-contain sm:h-10 sm:w-24" loading="lazy" />
                           ) : (
-                            <div className="h-10 w-24 shrink-0 rounded bg-white/5" />
+                            <div className="h-9 w-20 shrink-0 rounded bg-white/5 sm:h-10 sm:w-24" />
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-bold text-white">{s.name}</p>
