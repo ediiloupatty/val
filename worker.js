@@ -1,4 +1,9 @@
-import { fetchShop as riotFetchShop, fetchOverview as riotFetchOverview, extractTokens } from './riot.js';
+import {
+  fetchShop as riotFetchShop,
+  fetchOverview as riotFetchOverview,
+  fetchInventoryDetail as riotFetchInventory,
+  extractTokens,
+} from './riot.js';
 
 // Origins allowed to call this API.
 const ALLOWED_ORIGINS = [
@@ -949,6 +954,44 @@ export default {
         console.error("valorant overview error:", err);
         return new Response(
           JSON.stringify({ success: false, error: "Gagal mengambil data akun" }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
+    // POST /api/valorant/inventory — the detailed owned-skins list. Body:
+    // { accessToken, idToken }. Returns { count, totalValueVp, skins: [...] }.
+    if (path === "/api/valorant/inventory" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const tokens = { accessToken: body.accessToken, idToken: body.idToken || "" };
+        if (!tokens.accessToken) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Sesi tidak valid — login ulang." }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        if (!(await shopRateOk(env, request))) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
+            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        const result = await riotFetchInventory(tokens);
+        if (result.status === "ok") {
+          return new Response(
+            JSON.stringify({ success: true, inventory: result.inventory }),
+            { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: false, error: result.error }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        console.error("valorant inventory error:", err);
+        return new Response(
+          JSON.stringify({ success: false, error: "Gagal mengambil inventory" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchShop, fetchValorantOverview } from './api.js';
+import { fetchShop, fetchValorantOverview, fetchValorantInventory } from './api.js';
 import { getTurnstileToken } from './turnstile.js';
 import { AUTH_URL, extractTokens, saveSession, loadSession, clearSession } from './riotSession.js';
 
@@ -128,11 +128,16 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
   const [storeLoading, setStoreLoading] = useState(false);
   const [storeError, setStoreError] = useState('');
 
+  const [inventory, setInventory] = useState(null); // { count, totalValueVp, skins }
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState('');
+
   const doLogout = () => {
     clearSession();
     setSession(null);
     setOverview(null);
     setStore(null);
+    setInventory(null);
     setTab('dashboard');
     setRedirectUrl('');
     onLogout?.();
@@ -143,6 +148,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     setSession(null);
     setOverview(null);
     setStore(null);
+    setInventory(null);
     setLoginError('Sesi berakhir (token kadaluarsa ~1 jam). Silakan login lagi.');
   };
 
@@ -188,9 +194,25 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     setStore({ shop: res.shop, nightMarket: res.nightMarket });
   };
 
+  const loadInventory = async () => {
+    if (inventory || inventoryLoading || !session) return;
+    setInventoryLoading(true);
+    setInventoryError('');
+    const turnstileToken = await getTurnstileToken();
+    const res = await fetchValorantInventory(session, turnstileToken);
+    setInventoryLoading(false);
+    if (!res.ok) {
+      if (isExpiredError(res.error)) return handleExpired();
+      setInventoryError(res.error);
+      return;
+    }
+    setInventory(res.inventory);
+  };
+
   const goTab = (next) => {
     setTab(next);
     if (next === 'store' || next === 'night') loadStore();
+    if (next === 'inventory') loadInventory();
   };
 
   const handleLogin = async (e) => {
@@ -281,6 +303,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
             <div className="flex gap-2 border-b border-white/10">
               {[
                 ['dashboard', 'Dashboard'],
+                ['inventory', 'Inventory'],
                 ['store', 'Toko'],
                 ['night', 'Night Market'],
               ].map(([key, label]) => (
@@ -346,7 +369,9 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                           skin gratis/battlepass/event tidak punya harga toko jadi tidak terhitung.
                         </p>
                         {overview.inventory.offersCount != null && (
-                          <p className="mt-1 text-[10px] text-slate-500">debug · daftar harga dimuat: {vp(overview.inventory.offersCount)} item</p>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            debug · daftar harga: {vp(overview.inventory.offersCount)} item (status {overview.inventory.offersStatus})
+                          </p>
                         )}
                       </div>
                     ) : (
@@ -389,6 +414,50 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                         <StatCard label="Title" value={vp(overview.account.titleCount)} />
                       </div>
                     )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Inventory — owned skins */}
+            {tab === 'inventory' && (
+              <>
+                {inventoryLoading && <Spinner />}
+                {inventoryError && <p className="text-sm font-semibold text-val-red">{inventoryError}</p>}
+                {inventory && (
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <StatCard label="Total skin dimiliki" value={vp(inventory.count)} />
+                      <StatCard label="Nilai (est.)" value={`${vp(inventory.totalValueVp)} VP`} sub="Skin berharga toko saja" />
+                    </div>
+                    {inventory.offersStatus != null && inventory.offersStatus !== 200 && (
+                      <p className="text-[10px] text-slate-500">debug · daftar harga status {inventory.offersStatus} — harga mungkin kosong</p>
+                    )}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {inventory.skins.map((s) => (
+                        <div
+                          key={s.id}
+                          className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3"
+                          style={s.tierColor ? { borderColor: `${s.tierColor}55` } : undefined}
+                        >
+                          {s.image ? (
+                            <img src={s.image} alt="" className="h-10 w-24 shrink-0 object-contain" loading="lazy" />
+                          ) : (
+                            <div className="h-10 w-24 shrink-0 rounded bg-white/5" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-white">{s.name}</p>
+                            {s.price != null && (
+                              <span className="flex items-center gap-1 text-xs text-val-accent">
+                                <img src={VP_ICON} alt="VP" className="h-3.5 w-3.5" />
+                                <span className="font-bold tabular-nums">{vp(s.price)}</span>
+                              </span>
+                            )}
+                          </div>
+                          {s.tierIcon && <img src={s.tierIcon} alt="" className="h-5 w-5 shrink-0" />}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>

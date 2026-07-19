@@ -241,34 +241,44 @@ async function getEntitlements(headers, shard, puuid, itemTypeId) {
 }
 
 // Map of purchasable skin -> VP cost, from the full offers list.
+// GET the full price list. The offers endpoint uses a GET but some edges/regions
+// 400 on a GET that carries a Content-Type header with no body, so we send a
+// header set WITHOUT Content-Type here. Returns { map, status }.
 async function getOffersMap(headers, shard) {
   const map = {};
+  let status = 0;
+  // eslint-disable-next-line no-unused-vars
+  const { 'Content-Type': _ct, ...getHeaders } = headers;
   try {
-    const res = await fetch(pdUrl(shard, '/store/v1/offers/'), { headers });
+    const res = await fetch(pdUrl(shard, '/store/v1/offers/'), { headers: getHeaders });
+    status = res.status;
     console.log('offers fetch status:', res.status);
-    if (!res.ok) return map;
-    const body = await res.json();
-    const offers = body.Offers || body.offers || [];
-    console.log('offers count raw:', offers.length);
-    for (const o of offers) {
-      const cost = o.Cost?.[VP_CURRENCY];
-      if (cost == null) continue;
-      if (o.OfferID) map[o.OfferID] = cost;
-      const rewardId = o.Rewards?.[0]?.ItemID;
-      if (rewardId) map[rewardId] = cost;
+    if (res.ok) {
+      const body = await res.json();
+      const offers = body.Offers || body.offers || [];
+      console.log('offers count raw:', offers.length);
+      for (const o of offers) {
+        const cost = o.Cost?.[VP_CURRENCY];
+        if (cost == null) continue;
+        if (o.OfferID) map[o.OfferID] = cost;
+        const rewardId = o.Rewards?.[0]?.ItemID;
+        if (rewardId) map[rewardId] = cost;
+      }
     }
-  } catch {
-    /* ignore */
+  } catch (e) {
+    status = -1;
+    console.log('offers fetch threw:', String(e));
   }
-  return map;
+  return { map, status };
 }
 
 // Skin inventory summary: count of priced skins owned + total VP value.
 async function getInventory(headers, shard, puuid) {
-  const [owned, offers] = await Promise.all([
+  const [owned, offersRes] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
     getOffersMap(headers, shard),
   ]);
+  const offers = offersRes.map;
   let collectionValueVp = 0;
   let pricedSkinCount = 0;
   for (const id of owned) {
@@ -283,6 +293,7 @@ async function getInventory(headers, shard, puuid) {
     pricedSkinCount,
     collectionValueVp,
     offersCount: Object.keys(offers).length, // diagnostic: how many priced items loaded
+    offersStatus: offersRes.status,          // diagnostic: HTTP status of the price list
   };
 }
 
@@ -435,4 +446,80 @@ export async function fetchOverview(tokens) {
   ]);
 
   return { status: 'ok', overview: { identity, wallet, inventory, account, battlepass } };
+}
+
+// The detailed owned-skins list. Resolves owned skin-level UUIDs to distinct
+// skins via the community weapons/skins list (one call, then local mapping), so
+// this works even if the Riot price list is down. Prices are attached when the
+// offers list loads. Returns { status: 'ok', inventory } | { status: 'error', error }.
+export async function fetchInventoryDetail(tokens) {
+  const ctx = await prepare(tokens);
+  if (!ctx.ok) {
+    return { status: 'error', error: ctx.error === 'expired' ? 'Token sudah kadaluarsa. Login ulang lewat Riot.' : ctx.error };
+  }
+  const { headers, shard, puuid } = ctx;
+
+  const [owned, offersRes, skinsJson, tiersJson] = await Promise.all([
+    getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
+    getOffersMap(headers, shard),
+    fetch(`${VAPI}/weapons/skins`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(`${VAPI}/contenttiers`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+
+  const offers = offersRes.map;
+
+  // content tier UUID -> { color, icon }
+  const tierMap = {};
+  for (const t of tiersJson?.data || []) {
+    tierMap[t.uuid] = {
+      color: t.highlightColor ? `#${t.highlightColor.slice(0, 6)}` : null,
+      icon: t.displayIcon || null,
+      name: t.devName || null,
+    };
+  }
+
+  // skin-level UUID -> parent skin (so an owned level resolves to its skin)
+  const levelToSkin = {};
+  for (const skin of skinsJson?.data || []) {
+    for (const lvl of skin.levels || []) if (lvl.uuid) levelToSkin[lvl.uuid] = skin;
+    for (const ch of skin.chromas || []) if (ch.uuid) levelToSkin[ch.uuid] = skin;
+  }
+
+  // Resolve owned entitlements to distinct skins (dedupe by skin uuid).
+  const seen = new Set();
+  const skins = [];
+  let totalValueVp = 0;
+  for (const levelId of owned) {
+    const skin = levelToSkin[levelId];
+    if (!skin || seen.has(skin.uuid)) continue;
+    seen.add(skin.uuid);
+    // price: try the owned level, then the skin's base level.
+    const baseLevel = skin.levels?.[0]?.uuid;
+    const price = offers[levelId] ?? (baseLevel ? offers[baseLevel] : null) ?? null;
+    if (price != null) totalValueVp += price;
+    const tier = skin.contentTierUuid ? tierMap[skin.contentTierUuid] : null;
+    skins.push({
+      id: skin.uuid,
+      name: skin.displayName || 'Unknown skin',
+      image: skin.displayIcon || skin.levels?.[0]?.displayIcon || null,
+      price,
+      tierColor: tier?.color || null,
+      tierIcon: tier?.icon || null,
+    });
+  }
+
+  // Priciest first; unpriced skins sink to the bottom.
+  skins.sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+
+  return {
+    status: 'ok',
+    inventory: {
+      count: skins.length,
+      totalSkinEntitlements: owned.length,
+      totalValueVp,
+      offersStatus: offersRes.status,
+      offersCount: Object.keys(offers).length,
+      skins,
+    },
+  };
 }

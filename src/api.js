@@ -272,6 +272,33 @@ export async function fetchValorantOverview(tokens, turnstileToken) {
 }
 
 /**
+ * Fetches the detailed owned-skins list using stored session tokens.
+ * Returns { ok: true, inventory } | { ok: false, error }.
+ */
+export async function fetchValorantInventory(tokens, turnstileToken) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/valorant/inventory`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+          turnstileToken,
+        }),
+      },
+      30000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) return { ok: true, inventory: json.inventory };
+    return { ok: false, error: json.error || 'Gagal mengambil inventory' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */
