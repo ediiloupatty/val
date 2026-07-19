@@ -240,60 +240,83 @@ async function getEntitlements(headers, shard, puuid, itemTypeId) {
   }
 }
 
-// Map of purchasable skin -> VP cost, from the full offers list.
-// GET the full price list. The offers endpoint uses a GET but some edges/regions
-// 400 on a GET that carries a Content-Type header with no body, so we send a
-// header set WITHOUT Content-Type here. Returns { map, status }.
-async function getOffersMap(headers, shard) {
-  const map = {};
-  let status = 0;
-  // eslint-disable-next-line no-unused-vars
-  const { 'Content-Type': _ct, ...getHeaders } = headers;
+// Riot removed the live price catalog (/store/v1/offers/ now 404s), so we
+// estimate a skin's price from its content tier. VALORANT prices are fixed per
+// edition; melee skins cost more. This is an estimate, clearly labelled as such.
+const MELEE_WEAPON_UUID = '2f59173c-4bed-b6c3-2191-dea9b58be9c7';
+const TIER_PRICE = {
+  '12683d76-48d7-84a3-4e09-6985794f0445': 875,  // Select
+  '0cebb8be-46d7-c12a-d306-e9907bfc5a25': 1275, // Deluxe
+  '60bca009-4182-7998-dee7-b8a2558dc369': 1775, // Premium
+  'e046854e-406c-37f4-6607-19a9ba8426fc': 2175, // Exclusive
+  '411e4a55-4e59-7757-41f0-86a53f101bb5': 2475, // Ultra
+};
+const TIER_PRICE_MELEE = {
+  '12683d76-48d7-84a3-4e09-6985794f0445': 1750,
+  '0cebb8be-46d7-c12a-d306-e9907bfc5a25': 2550,
+  '60bca009-4182-7998-dee7-b8a2558dc369': 3550,
+  'e046854e-406c-37f4-6607-19a9ba8426fc': 4350,
+  '411e4a55-4e59-7757-41f0-86a53f101bb5': 4950,
+};
+
+function estimateSkinPrice(entry) {
+  if (!entry?.tier) return null; // no content tier => default/free skin
+  return (entry.isMelee ? TIER_PRICE_MELEE : TIER_PRICE)[entry.tier] ?? null;
+}
+
+// Build skin-level UUID -> { uuid, name, image, tier, isMelee } from the
+// community weapons list (one call). Used to resolve owned entitlements and to
+// estimate prices. Returns {} on failure.
+async function getWeaponSkinIndex() {
+  const index = {};
   try {
-    const res = await fetch(pdUrl(shard, '/store/v1/offers/'), { headers: getHeaders });
-    status = res.status;
-    console.log('offers fetch status:', res.status);
-    if (res.ok) {
-      const body = await res.json();
-      const offers = body.Offers || body.offers || [];
-      console.log('offers count raw:', offers.length);
-      for (const o of offers) {
-        const cost = o.Cost?.[VP_CURRENCY];
-        if (cost == null) continue;
-        if (o.OfferID) map[o.OfferID] = cost;
-        const rewardId = o.Rewards?.[0]?.ItemID;
-        if (rewardId) map[rewardId] = cost;
+    const res = await fetch(`${VAPI}/weapons`);
+    if (!res.ok) return index;
+    const data = (await res.json()).data || [];
+    for (const weapon of data) {
+      const isMelee = weapon.uuid === MELEE_WEAPON_UUID;
+      for (const skin of weapon.skins || []) {
+        const entry = {
+          uuid: skin.uuid,
+          name: skin.displayName || 'Unknown skin',
+          image: skin.displayIcon || skin.levels?.[0]?.displayIcon || null,
+          tier: skin.contentTierUuid || null,
+          isMelee,
+        };
+        for (const lvl of skin.levels || []) if (lvl.uuid) index[lvl.uuid] = entry;
+        for (const ch of skin.chromas || []) if (ch.uuid) index[ch.uuid] = entry;
       }
     }
-  } catch (e) {
-    status = -1;
-    console.log('offers fetch threw:', String(e));
+  } catch {
+    /* ignore */
   }
-  return { map, status };
+  return index;
 }
 
 // Skin inventory summary: count of priced skins owned + total VP value.
 async function getInventory(headers, shard, puuid) {
-  const [owned, offersRes] = await Promise.all([
+  const [owned, index] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
-    getOffersMap(headers, shard),
+    getWeaponSkinIndex(),
   ]);
-  const offers = offersRes.map;
+  const seen = new Set();
   let collectionValueVp = 0;
   let pricedSkinCount = 0;
-  for (const id of owned) {
-    const cost = offers[id];
-    if (cost != null) {
-      collectionValueVp += cost;
+  for (const levelId of owned) {
+    const entry = index[levelId];
+    if (!entry || seen.has(entry.uuid)) continue;
+    seen.add(entry.uuid);
+    const price = estimateSkinPrice(entry);
+    if (price != null) {
+      collectionValueVp += price;
       pricedSkinCount += 1;
     }
   }
   return {
     totalSkinEntitlements: owned.length,
+    ownedSkinCount: seen.size,
     pricedSkinCount,
     collectionValueVp,
-    offersCount: Object.keys(offers).length, // diagnostic: how many priced items loaded
-    offersStatus: offersRes.status,          // diagnostic: HTTP status of the price list
   };
 }
 
@@ -449,9 +472,9 @@ export async function fetchOverview(tokens) {
 }
 
 // The detailed owned-skins list. Resolves owned skin-level UUIDs to distinct
-// skins via the community weapons/skins list (one call, then local mapping), so
-// this works even if the Riot price list is down. Prices are attached when the
-// offers list loads. Returns { status: 'ok', inventory } | { status: 'error', error }.
+// skins via the community weapons list (one call, then local mapping) and
+// estimates each price from its content tier.
+// Returns { status: 'ok', inventory } | { status: 'error', error }.
 export async function fetchInventoryDetail(tokens) {
   const ctx = await prepare(tokens);
   if (!ctx.ok) {
@@ -459,14 +482,11 @@ export async function fetchInventoryDetail(tokens) {
   }
   const { headers, shard, puuid } = ctx;
 
-  const [owned, offersRes, skinsJson, tiersJson] = await Promise.all([
+  const [owned, index, tiersJson] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
-    getOffersMap(headers, shard),
-    fetch(`${VAPI}/weapons/skins`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    getWeaponSkinIndex(),
     fetch(`${VAPI}/contenttiers`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
-
-  const offers = offersRes.map;
 
   // content tier UUID -> { color, icon }
   const tierMap = {};
@@ -474,15 +494,7 @@ export async function fetchInventoryDetail(tokens) {
     tierMap[t.uuid] = {
       color: t.highlightColor ? `#${t.highlightColor.slice(0, 6)}` : null,
       icon: t.displayIcon || null,
-      name: t.devName || null,
     };
-  }
-
-  // skin-level UUID -> parent skin (so an owned level resolves to its skin)
-  const levelToSkin = {};
-  for (const skin of skinsJson?.data || []) {
-    for (const lvl of skin.levels || []) if (lvl.uuid) levelToSkin[lvl.uuid] = skin;
-    for (const ch of skin.chromas || []) if (ch.uuid) levelToSkin[ch.uuid] = skin;
   }
 
   // Resolve owned entitlements to distinct skins (dedupe by skin uuid).
@@ -490,25 +502,23 @@ export async function fetchInventoryDetail(tokens) {
   const skins = [];
   let totalValueVp = 0;
   for (const levelId of owned) {
-    const skin = levelToSkin[levelId];
-    if (!skin || seen.has(skin.uuid)) continue;
-    seen.add(skin.uuid);
-    // price: try the owned level, then the skin's base level.
-    const baseLevel = skin.levels?.[0]?.uuid;
-    const price = offers[levelId] ?? (baseLevel ? offers[baseLevel] : null) ?? null;
+    const entry = index[levelId];
+    if (!entry || seen.has(entry.uuid)) continue;
+    seen.add(entry.uuid);
+    const price = estimateSkinPrice(entry);
     if (price != null) totalValueVp += price;
-    const tier = skin.contentTierUuid ? tierMap[skin.contentTierUuid] : null;
+    const tier = entry.tier ? tierMap[entry.tier] : null;
     skins.push({
-      id: skin.uuid,
-      name: skin.displayName || 'Unknown skin',
-      image: skin.displayIcon || skin.levels?.[0]?.displayIcon || null,
+      id: entry.uuid,
+      name: entry.name,
+      image: entry.image,
       price,
       tierColor: tier?.color || null,
       tierIcon: tier?.icon || null,
     });
   }
 
-  // Priciest first; unpriced skins sink to the bottom.
+  // Priciest first; unpriced (default) skins sink to the bottom.
   skins.sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
 
   return {
@@ -517,8 +527,6 @@ export async function fetchInventoryDetail(tokens) {
       count: skins.length,
       totalSkinEntitlements: owned.length,
       totalValueVp,
-      offersStatus: offersRes.status,
-      offersCount: Object.keys(offers).length,
       skins,
     },
   };

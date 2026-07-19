@@ -364,15 +364,11 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                           <span className="mb-1 text-sm font-bold text-slate-400">VP</span>
                         </div>
                         <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                          Perkiraan dari total harga toko <b className="text-slate-300">{vp(overview.inventory.pricedSkinCount)} skin</b> yang kamu miliki
-                          (dari {vp(overview.inventory.totalSkinEntitlements)} entitlement). Ini <b className="text-slate-300">bukan</b> uang asli yang dikeluarkan —
-                          skin gratis/battlepass/event tidak punya harga toko jadi tidak terhitung.
+                          Estimasi dari <b className="text-slate-300">{vp(overview.inventory.pricedSkinCount)} skin berharga</b> yang kamu miliki
+                          (total {vp(overview.inventory.ownedSkinCount)} skin unik). Dihitung dari harga standar per content tier
+                          (Select/Deluxe/Premium/Exclusive/Ultra) — <b className="text-slate-300">bukan</b> uang asli yang dikeluarkan.
+                          Skin gratis/battlepass/default tidak dihitung.
                         </p>
-                        {overview.inventory.offersCount != null && (
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            debug · daftar harga: {vp(overview.inventory.offersCount)} item (status {overview.inventory.offersStatus})
-                          </p>
-                        )}
                       </div>
                     ) : (
                       <div className="rounded-2xl border border-white/10 bg-val-panel p-4 text-sm text-slate-400">
@@ -428,11 +424,8 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                   <div className="flex flex-col gap-4">
                     <div className="grid grid-cols-2 gap-3">
                       <StatCard label="Total skin dimiliki" value={vp(inventory.count)} />
-                      <StatCard label="Nilai (est.)" value={`${vp(inventory.totalValueVp)} VP`} sub="Skin berharga toko saja" />
+                      <StatCard label="Nilai (est.)" value={`${vp(inventory.totalValueVp)} VP`} sub="Estimasi dari content tier" />
                     </div>
-                    {inventory.offersStatus != null && inventory.offersStatus !== 200 && (
-                      <p className="text-[10px] text-slate-500">debug · daftar harga status {inventory.offersStatus} — harga mungkin kosong</p>
-                    )}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {inventory.skins.map((s) => (
                         <div
