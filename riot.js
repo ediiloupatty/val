@@ -309,6 +309,34 @@ function estimateSkinPrice(entry) {
   return (entry.isMelee ? TIER_PRICE_MELEE : TIER_PRICE)[entry.tier] ?? null;
 }
 
+// Skin-level UUIDs handed out as battlepass/event contract rewards. Battlepass
+// skins DO carry a content tier (Select/Deluxe), so the tier alone can't tell
+// bought from earned — but owning a level that appears as a contract reward
+// means the skin was earned, not bought. Returns an empty Set on failure
+// (skins then just stay classified as premium).
+async function getContractRewardLevels() {
+  const set = new Set();
+  try {
+    const res = await fetch(`${VAPI}/contracts`);
+    if (!res.ok) return set;
+    const data = (await res.json()).data || [];
+    for (const contract of data) {
+      for (const chapter of contract.content?.chapters || []) {
+        const rewards = [
+          ...(chapter.levels || []).map((l) => l.reward),
+          ...(chapter.freeRewards || []),
+        ];
+        for (const r of rewards) {
+          if (r?.type === 'EquippableSkinLevel' && r.uuid) set.add(r.uuid);
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return set;
+}
+
 // Build skin-level UUID -> { uuid, name, image, tier, isMelee } from the
 // community weapons list (one call). Used to resolve owned entitlements and to
 // estimate prices. Returns {} on failure.
@@ -340,10 +368,15 @@ async function getWeaponSkinIndex() {
 
 // Skin inventory summary: count of priced skins owned + total VP value.
 async function getInventory(headers, shard, puuid) {
-  const [owned, index] = await Promise.all([
+  const [owned, index, contractLevels] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
     getWeaponSkinIndex(),
+    getContractRewardLevels(),
   ]);
+  // Skins where any owned level came from a battlepass/event contract.
+  const earnedSkinUuids = new Set(
+    owned.filter((id) => contractLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
+  );
   const seen = new Set();
   let collectionValueVp = 0;
   let pricedSkinCount = 0;
@@ -351,6 +384,7 @@ async function getInventory(headers, shard, puuid) {
     const entry = index[levelId];
     if (!entry || seen.has(entry.uuid)) continue;
     seen.add(entry.uuid);
+    if (earnedSkinUuids.has(entry.uuid)) continue; // battlepass/event reward, not bought
     const price = estimateSkinPrice(entry);
     if (price != null) {
       collectionValueVp += price;
@@ -527,11 +561,17 @@ export async function fetchInventoryDetail(tokens) {
   }
   const { headers, shard, puuid } = ctx;
 
-  const [owned, index, tiersJson] = await Promise.all([
+  const [owned, index, tiersJson, contractLevels] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
     getWeaponSkinIndex(),
     fetch(`${VAPI}/contenttiers`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    getContractRewardLevels(),
   ]);
+
+  // Skins where any owned level came from a battlepass/event contract.
+  const earnedSkinUuids = new Set(
+    owned.filter((id) => contractLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
+  );
 
   // content tier UUID -> { color, icon }
   const tierMap = {};
@@ -550,7 +590,8 @@ export async function fetchInventoryDetail(tokens) {
     const entry = index[levelId];
     if (!entry || seen.has(entry.uuid)) continue;
     seen.add(entry.uuid);
-    const price = estimateSkinPrice(entry);
+    const earned = earnedSkinUuids.has(entry.uuid);
+    const price = earned ? null : estimateSkinPrice(entry);
     if (price != null) totalValueVp += price;
     const tier = entry.tier ? tierMap[entry.tier] : null;
     skins.push({
@@ -558,6 +599,7 @@ export async function fetchInventoryDetail(tokens) {
       name: entry.name,
       image: entry.image,
       price,
+      source: earned ? 'battlepass' : price != null ? 'premium' : 'standard',
       tierColor: tier?.color || null,
       tierIcon: tier?.icon || null,
     });

@@ -151,7 +151,9 @@ function InventorySkinRow({ skin }) {
             <span className="font-bold tabular-nums">{vp(skin.price)}</span>
           </span>
         ) : (
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Gratis</span>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            {skin.source === 'battlepass' ? 'Battlepass' : 'Gratis'}
+          </span>
         )}
       </div>
       {skin.tierIcon && <img src={skin.tierIcon} alt="" className="h-5 w-5 shrink-0" />}
@@ -494,8 +496,8 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                             Skin Gratis / Battlepass · {vp(freeSkins.length)}
                           </p>
                           <p className="-mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                            Skin tanpa content tier: bawaan default, hadiah battlepass, atau event. Riot tidak membedakan
-                            cara mendapatkannya, jadi pembagian ini berdasarkan ada/tidaknya tier harga.
+                            Skin yang kamu dapat sebagai hadiah battlepass / event pass (dicocokkan dengan daftar reward
+                            kontrak Riot), bukan dibeli dengan VP. Tidak dihitung dalam estimasi nilai.
                           </p>
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             {freeSkins.map((s) => (
