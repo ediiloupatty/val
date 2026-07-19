@@ -233,8 +233,8 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-val-dark text-white">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-4xl flex-col px-4 py-5 sm:px-8 sm:py-6">
+    <div className="h-[100dvh] w-full overflow-y-auto overflow-x-hidden bg-val-dark text-white">
+      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 py-5 sm:px-8 sm:py-6">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <button onClick={onExit} className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-white">
