@@ -21,6 +21,29 @@ const rp = (n) => (n != null ? `Rp${Math.round(Number(n)).toLocaleString('id-ID'
 const IDR_PER_VP = 112;
 const BATTLEPASS_COST_VP = 1000;
 
+// Account resale estimate, calibrated against real itemku listings (Jul 2026):
+// 170 skins ≈ Rp4,3jt · 82 skins ≈ Rp2,75jt · 30 skins ≈ Rp800rb — consistently
+// ~10–20% of the estimated money spent. High ranks fetch a premium (market
+// calculators put Radiant at 2–5× an unranked account with the same skins).
+const RESALE_RATE_LOW = 0.10;
+const RESALE_RATE_HIGH = 0.20;
+const RANK_MULTIPLIERS = [
+  ['radiant', 2.0],
+  ['immortal', 1.5],
+  ['ascendant', 1.25],
+  ['diamond', 1.15],
+  ['platinum', 1.05],
+  ['gold', 1.0],
+  ['silver', 1.0],
+  ['bronze', 0.95],
+  ['iron', 0.9],
+];
+function rankMultiplier(rankName) {
+  const n = (rankName || '').toLowerCase();
+  for (const [key, mult] of RANK_MULTIPLIERS) if (n.includes(key)) return mult;
+  return 1.0;
+}
+
 function formatCountdown(totalSeconds) {
   const s = Math.max(0, Number(totalSeconds) || 0);
   const h = Math.floor(s / 3600);
@@ -442,6 +465,36 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                             Konversi memakai harga resmi paket 1000 VP (≈ Rp{IDR_PER_VP.toLocaleString('id-ID')}/VP; paket besar
                             bisa lebih murah, ± Rp100–118/VP). Battlepass dihitung dari act yang skin jalur berbayarnya kamu miliki.
                             Skin hadiah/diskon Night Market membuat pengeluaran asli bisa lebih rendah — ini estimasi, bukan tagihan. 😄
+                          </p>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Estimated account resale value: 10–20% of spend × rank multiplier */}
+                    {overview.inventory && (() => {
+                      const skinVp = overview.inventory.collectionValueVp || 0;
+                      const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
+                      const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
+                      const mult = rankMultiplier(overview.identity?.rank?.name);
+                      const low = spendIdr * RESALE_RATE_LOW * mult;
+                      const high = spendIdr * RESALE_RATE_HIGH * mult;
+                      if (spendIdr <= 0) return null;
+                      return (
+                        <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimasi Harga Jual Akun</p>
+                          <p className="mt-2 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
+                            {rp(low)} <span className="text-base font-bold text-slate-500">–</span> {rp(high)}
+                          </p>
+                          <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            Rank {overview.identity?.rank?.name || '—'} · multiplier {mult}×
+                          </p>
+                          <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">
+                            Kalibrasi dari listing nyata pasar akun Indonesia (itemku): akun ±170 skin laku ≈ Rp4,3jt,
+                            ±82 skin ≈ Rp2,75jt — sekitar 10–20% dari estimasi pengeluaran. Rank tinggi menaikkan harga
+                            (Immortal ±1,5×, Radiant ±2×). Skin langka (Champions, bundle lawas) bisa di atas rentang ini.
+                          </p>
+                          <p className="mt-2 max-w-prose text-[11px] leading-relaxed text-slate-500">
+                            ⚠️ Sekadar info pasar: jual-beli akun melanggar Terms of Service Riot dan berisiko banned permanen.
                           </p>
                         </div>
                       );
