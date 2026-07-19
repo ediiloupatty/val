@@ -13,6 +13,13 @@ const RAD_ICON =
   'https://media.valorant-api.com/currencies/e59aa87c-4cbf-517a-5983-6e81511be9b7/displayicon.png';
 
 const vp = (n) => (n != null ? Number(n).toLocaleString('id-ID') : '—');
+const rp = (n) => (n != null ? `Rp${Math.round(Number(n)).toLocaleString('id-ID')}` : '—');
+
+// Official Codashop/Riot ID pricing: 475 VP = Rp56.000 … 11.000 VP = Rp1.099.000
+// (≈ Rp100–118 per VP). We convert with the 1000-VP pack rate since that's the
+// most common denomination — and exactly one battlepass.
+const IDR_PER_VP = 112;
+const BATTLEPASS_COST_VP = 1000;
 
 function formatCountdown(totalSeconds) {
   const s = Math.max(0, Number(totalSeconds) || 0);
@@ -407,6 +414,38 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                         Data inventory tidak tersedia (mungkin timeout dari Riot). Coba buka lagi menu ini.
                       </div>
                     )}
+
+                    {/* Estimated real-money spend: bought skins + battlepasses, converted to IDR */}
+                    {overview.inventory && (() => {
+                      const skinVp = overview.inventory.collectionValueVp || 0;
+                      const bpCount = overview.inventory.battlepassBoughtCount || 0;
+                      const bpVp = bpCount * BATTLEPASS_COST_VP;
+                      const totalIdr = (skinVp + bpVp) * IDR_PER_VP;
+                      return (
+                        <div className="relative overflow-hidden rounded-3xl border border-val-red/30 bg-gradient-to-br from-val-red/15 via-val-panel to-val-panel p-5 sm:p-6">
+                          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-val-red/10 blur-3xl" />
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-val-red">Estimasi Total Pengeluaran</p>
+                          <p className="mt-2 text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
+                            {rp(totalIdr)}
+                          </p>
+                          <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-300 sm:text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-400">Skin premium ({vp(skinVp)} VP)</span>
+                              <span className="font-bold tabular-nums">{rp(skinVp * IDR_PER_VP)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-400">Battlepass ({vp(bpCount)} × {vp(BATTLEPASS_COST_VP)} VP)</span>
+                              <span className="font-bold tabular-nums">{rp(bpVp * IDR_PER_VP)}</span>
+                            </div>
+                          </div>
+                          <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">
+                            Konversi memakai harga resmi paket 1000 VP (≈ Rp{IDR_PER_VP.toLocaleString('id-ID')}/VP; paket besar
+                            bisa lebih murah, ± Rp100–118/VP). Battlepass dihitung dari act yang skin jalur berbayarnya kamu miliki.
+                            Skin hadiah/diskon Night Market membuat pengeluaran asli bisa lebih rendah — ini estimasi, bukan tagihan. 😄
+                          </p>
+                        </div>
+                      );
+                    })()}
 
                     {/* Wallet */}
                     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">

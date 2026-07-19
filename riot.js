@@ -312,29 +312,39 @@ function estimateSkinPrice(entry) {
 // Skin-level UUIDs handed out as battlepass/event contract rewards. Battlepass
 // skins DO carry a content tier (Select/Deluxe), so the tier alone can't tell
 // bought from earned — but owning a level that appears as a contract reward
-// means the skin was earned, not bought. Returns an empty Set on failure
-// (skins then just stay classified as premium).
+// means the skin was earned, not bought.
+//
+// Also maps each PAID-track level of a season battlepass to its contract, so
+// owning one of those skins proves the user bought that act's battlepass
+// (1000 VP each). Free-track rewards don't count as proof.
+// Returns { rewardLevels: Set, paidSeasonLevelToContract: Map }; both empty on
+// failure (skins then just stay classified as premium).
 async function getContractRewardLevels() {
-  const set = new Set();
+  const rewardLevels = new Set();
+  const paidSeasonLevelToContract = new Map();
   try {
     const res = await fetch(`${VAPI}/contracts`);
-    if (!res.ok) return set;
+    if (!res.ok) return { rewardLevels, paidSeasonLevelToContract };
     const data = (await res.json()).data || [];
     for (const contract of data) {
+      const isSeasonPass = contract.content?.relationType === 'Season';
       for (const chapter of contract.content?.chapters || []) {
-        const rewards = [
-          ...(chapter.levels || []).map((l) => l.reward),
-          ...(chapter.freeRewards || []),
-        ];
-        for (const r of rewards) {
-          if (r?.type === 'EquippableSkinLevel' && r.uuid) set.add(r.uuid);
+        for (const l of chapter.levels || []) {
+          const r = l.reward;
+          if (r?.type === 'EquippableSkinLevel' && r.uuid) {
+            rewardLevels.add(r.uuid);
+            if (isSeasonPass) paidSeasonLevelToContract.set(r.uuid, contract.uuid);
+          }
+        }
+        for (const r of chapter.freeRewards || []) {
+          if (r?.type === 'EquippableSkinLevel' && r.uuid) rewardLevels.add(r.uuid);
         }
       }
     }
   } catch {
     /* ignore */
   }
-  return set;
+  return { rewardLevels, paidSeasonLevelToContract };
 }
 
 // Build skin-level UUID -> { uuid, name, image, tier, isMelee } from the
@@ -368,14 +378,18 @@ async function getWeaponSkinIndex() {
 
 // Skin inventory summary: count of priced skins owned + total VP value.
 async function getInventory(headers, shard, puuid) {
-  const [owned, index, contractLevels] = await Promise.all([
+  const [owned, index, contracts] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
     getWeaponSkinIndex(),
     getContractRewardLevels(),
   ]);
   // Skins where any owned level came from a battlepass/event contract.
   const earnedSkinUuids = new Set(
-    owned.filter((id) => contractLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
+    owned.filter((id) => contracts.rewardLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
+  );
+  // Distinct season battlepasses the user provably bought (owns a paid-track skin).
+  const ownedPasses = new Set(
+    owned.map((id) => contracts.paidSeasonLevelToContract.get(id)).filter(Boolean)
   );
   const seen = new Set();
   let collectionValueVp = 0;
@@ -396,6 +410,7 @@ async function getInventory(headers, shard, puuid) {
     ownedSkinCount: seen.size,
     pricedSkinCount,
     collectionValueVp,
+    battlepassBoughtCount: ownedPasses.size,
   };
 }
 
@@ -561,7 +576,7 @@ export async function fetchInventoryDetail(tokens) {
   }
   const { headers, shard, puuid } = ctx;
 
-  const [owned, index, tiersJson, contractLevels] = await Promise.all([
+  const [owned, index, tiersJson, contracts] = await Promise.all([
     getEntitlements(headers, shard, puuid, ITEM_TYPES.skins),
     getWeaponSkinIndex(),
     fetch(`${VAPI}/contenttiers`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
@@ -570,7 +585,7 @@ export async function fetchInventoryDetail(tokens) {
 
   // Skins where any owned level came from a battlepass/event contract.
   const earnedSkinUuids = new Set(
-    owned.filter((id) => contractLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
+    owned.filter((id) => contracts.rewardLevels.has(id)).map((id) => index[id]?.uuid).filter(Boolean)
   );
 
   // content tier UUID -> { color, icon }
