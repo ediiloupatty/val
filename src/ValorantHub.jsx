@@ -35,6 +35,33 @@ function StatCard({ label, value, sub }) {
   );
 }
 
+// One cell inside the "Koleksi Akun" panel: big number, quiet label beneath.
+function AccountStat({ label, value }) {
+  return (
+    <div className="text-center">
+      <p className="text-xl font-black tabular-nums text-white sm:text-2xl">{value}</p>
+      <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+// One wallet balance: icon, label, amount — laid out cleanly.
+function WalletCard({ icon, label, value, accent }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
+      {icon ? (
+        <img src={icon} alt="" className="h-7 w-7 shrink-0" />
+      ) : (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-black text-slate-300">KC</div>
+      )}
+      <div className="min-w-0">
+        <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+        <p className={`truncate text-base font-black tabular-nums sm:text-lg ${accent ? 'text-val-accent' : 'text-white'}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
 function SkinCard({ skin }) {
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-val-panel p-4 transition-colors hover:border-val-accent/40 sm:p-5">
@@ -325,44 +352,19 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                 {overviewError && <p className="text-sm font-semibold text-val-red">{overviewError}</p>}
                 {overview && (
                   <div className="flex flex-col gap-5">
-                    {/* Wallet */}
-                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
-                        <img src={VP_ICON} alt="VP" className="h-6 w-6 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Valorant Points</p>
-                          <p className="truncate text-base font-black tabular-nums text-val-accent sm:text-lg">{vp(overview.wallet?.vp)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
-                        <img src={RAD_ICON} alt="RP" className="h-6 w-6 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Radianite</p>
-                          <p className="truncate text-base font-black tabular-nums text-white sm:text-lg">{vp(overview.wallet?.radianite)}</p>
-                        </div>
-                      </div>
-                      {overview.wallet?.kingdom != null && (
-                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
-                          <div className="min-w-0">
-                            <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">Kingdom Credits</p>
-                            <p className="truncate text-base font-black tabular-nums text-white sm:text-lg">{vp(overview.wallet.kingdom)}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Estimated total VP value of the skin collection (hero card) */}
+                    {/* Estimated total VP value of the skin collection (hero — the headline number) */}
                     {overview.inventory ? (
-                      <div className="rounded-2xl border border-val-accent/40 bg-gradient-to-br from-val-accent/15 to-transparent p-4 sm:p-5">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-val-accent">Estimasi Total VP Skin</p>
-                        <div className="mt-1 flex items-end gap-2">
-                          <img src={VP_ICON} alt="VP" className="mb-1 h-6 w-6 shrink-0 sm:mb-1.5 sm:h-7 sm:w-7" />
-                          <span className="text-3xl font-black leading-none tabular-nums text-white sm:text-4xl">
+                      <div className="relative overflow-hidden rounded-3xl border border-val-accent/30 bg-gradient-to-br from-val-accent/20 via-val-panel to-val-panel p-5 sm:p-6">
+                        <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-val-accent/10 blur-3xl" />
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-val-accent">Estimasi Total VP Skin</p>
+                        <div className="mt-2 flex items-end gap-2.5">
+                          <img src={VP_ICON} alt="VP" className="mb-1.5 h-7 w-7 shrink-0 sm:h-8 sm:w-8" />
+                          <span className="text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
                             {vp(overview.inventory.collectionValueVp)}
                           </span>
-                          <span className="mb-0.5 text-sm font-bold text-slate-400 sm:mb-1">VP</span>
+                          <span className="mb-1 text-sm font-bold text-slate-400">VP</span>
                         </div>
-                        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                        <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">
                           Estimasi dari <b className="text-slate-300">{vp(overview.inventory.pricedSkinCount)} skin berharga</b> yang kamu miliki
                           (total {vp(overview.inventory.ownedSkinCount)} skin unik). Dihitung dari harga standar per content tier
                           (Select/Deluxe/Premium/Exclusive/Ultra) — <b className="text-slate-300">bukan</b> uang asli yang dikeluarkan.
@@ -375,38 +377,50 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
                       </div>
                     )}
 
+                    {/* Wallet */}
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
+                      <WalletCard icon={VP_ICON} label="Valorant Points" value={vp(overview.wallet?.vp)} accent />
+                      <WalletCard icon={RAD_ICON} label="Radianite" value={vp(overview.wallet?.radianite)} />
+                      {overview.wallet?.kingdom != null && (
+                        <WalletCard label="Kingdom Credits" value={vp(overview.wallet.kingdom)} />
+                      )}
+                    </div>
+
                     {/* Battlepass */}
                     {overview.battlepass ? (
-                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4">
+                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{overview.battlepass.name || 'Battlepass'}</p>
                           <p className="text-sm font-black text-white">
                             Tier {overview.battlepass.tier}<span className="text-slate-500"> / {overview.battlepass.totalLevels}</span>
                           </p>
                         </div>
-                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/10">
                           <div
-                            className="h-full rounded-full bg-val-accent"
+                            className="h-full rounded-full bg-gradient-to-r from-val-accent/70 to-val-accent"
                             style={{ width: `${Math.min(100, (overview.battlepass.tier / (overview.battlepass.totalLevels || 50)) * 100)}%` }}
                           />
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4">
+                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Battlepass</p>
                         <p className="mt-1 text-sm text-slate-400">Tidak terdeteksi (mungkin belum punya battlepass aktif).</p>
                       </div>
                     )}
 
-                    {/* Account counts */}
+                    {/* Account counts — one tidy panel instead of six loose boxes */}
                     {overview.account && (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <StatCard label="Level Akun" value={vp(overview.account.level)} />
-                        <StatCard label="Agent" value={vp(overview.account.agentCount)} />
-                        <StatCard label="Player Card" value={vp(overview.account.cardCount)} />
-                        <StatCard label="Spray" value={vp(overview.account.sprayCount)} />
-                        <StatCard label="Buddy" value={vp(overview.account.buddyCount)} />
-                        <StatCard label="Title" value={vp(overview.account.titleCount)} />
+                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
+                        <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Koleksi Akun</p>
+                        <div className="grid grid-cols-3 gap-y-5 sm:grid-cols-6">
+                          <AccountStat label="Level" value={vp(overview.account.level)} />
+                          <AccountStat label="Agent" value={vp(overview.account.agentCount)} />
+                          <AccountStat label="Card" value={vp(overview.account.cardCount)} />
+                          <AccountStat label="Spray" value={vp(overview.account.sprayCount)} />
+                          <AccountStat label="Buddy" value={vp(overview.account.buddyCount)} />
+                          <AccountStat label="Title" value={vp(overview.account.titleCount)} />
+                        </div>
                       </div>
                     )}
                   </div>
