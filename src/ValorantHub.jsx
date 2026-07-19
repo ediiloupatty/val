@@ -12,8 +12,8 @@ const VP_ICON =
 const RAD_ICON =
   'https://media.valorant-api.com/currencies/e59aa87c-4cbf-517a-5983-6e81511be9b7/displayicon.png';
 
-const vp = (n) => (n != null ? Number(n).toLocaleString('id-ID') : '—');
-const rp = (n) => (n != null ? `Rp${Math.round(Number(n)).toLocaleString('id-ID')}` : '—');
+const vp = (n) => (n != null ? Number(n).toLocaleString('id-ID') : '-');
+const rp = (n) => (n != null ? `Rp${Math.round(Number(n)).toLocaleString('id-ID')}` : '-');
 
 // Official Codashop/Riot ID pricing: 475 VP = Rp56.000 … 11.000 VP = Rp1.099.000
 // (≈ Rp100–118 per VP). We convert with the 1000-VP pack rate since that's the
@@ -89,10 +89,10 @@ const HUB_TEXT = {
     loginBody: (
       <>
         Ambil cookie <C>ssid</C> dari browser sekali. Setelah itu kamu tetap login otomatis sampai
-        ganti password — <b>password tidak pernah masuk ke web ini</b>.
+        ganti password. <b>Password tidak pernah masuk ke web ini.</b>
       </>
     ),
-    step1: 'Buka & login di halaman Riot (kalau sudah login, tinggal muncul halaman blank — itu normal).',
+    step1: 'Buka & login di halaman Riot (kalau sudah login, tinggal muncul halaman blank, itu normal).',
     openRiot: 'Buka Login Riot ↗',
     step2: (
       <>
@@ -120,7 +120,7 @@ const HUB_TEXT = {
     heroNote: (priced, owned) => (
       <>
         Estimasi dari <Hi>{priced} skin berharga</Hi> yang kamu miliki (total {owned} skin unik).
-        Dihitung dari harga standar per content tier (Select/Deluxe/Premium/Exclusive/Ultra) —{' '}
+        Dihitung dari harga standar per content tier (Select/Deluxe/Premium/Exclusive/Ultra),{' '}
         <Hi>bukan</Hi> uang asli yang dikeluarkan. Skin gratis/battlepass/default tidak dihitung.
       </>
     ),
@@ -128,12 +128,12 @@ const HUB_TEXT = {
     spendTitle: 'Estimasi Total Pengeluaran',
     spendSkins: (vpStr) => `Skin premium (${vpStr} VP)`,
     spendBp: (n, cost) => `Battlepass (${n} × ${cost} VP)`,
-    spendNote: `Konversi memakai harga resmi paket 1000 VP (≈ Rp${IDR_PER_VP.toLocaleString('id-ID')}/VP; paket besar bisa lebih murah, ± Rp100–118/VP). Battlepass dihitung dari act yang skin jalur berbayarnya kamu miliki. Skin hadiah/diskon Night Market membuat pengeluaran asli bisa lebih rendah — ini estimasi, bukan tagihan. 😄`,
+    spendNote: `Konversi memakai harga resmi paket 1000 VP (sekitar Rp${IDR_PER_VP.toLocaleString('id-ID')} per VP; paket besar bisa lebih murah, kisaran Rp100 sampai Rp118 per VP). Battlepass dihitung dari act yang skin jalur berbayarnya kamu miliki. Skin hadiah/diskon Night Market membuat pengeluaran asli bisa lebih rendah. Ini estimasi, bukan tagihan. 😄`,
     resaleTitle: 'Estimasi Harga Jual Akun',
     resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
-    resaleNote: 'Kalibrasi dari listing nyata pasar akun Indonesia (itemku): akun ±170 skin laku ≈ Rp4,3jt, ±82 skin ≈ Rp2,75jt — sekitar 10–20% dari estimasi pengeluaran. Rank tinggi menaikkan harga (Immortal ±1,5×, Radiant ±2×). Skin langka (Champions, bundle lawas) bisa di atas rentang ini.',
+    resaleNote: 'Kalibrasi dari listing nyata pasar akun Indonesia (itemku): akun 170-an skin laku sekitar Rp4,3jt, 82 skin sekitar Rp2,75jt, kira-kira 10 sampai 20% dari estimasi pengeluaran. Rank tinggi menaikkan harga (Immortal sekitar 1,5x, Radiant 2x). Skin langka (Champions, bundle lawas) bisa di atas rentang ini.',
     resaleWarning: '⚠️ Sekadar info pasar: jual-beli akun melanggar Terms of Service Riot dan berisiko banned permanen.',
-    resaleLimitedLine: (names, lo, hi) => `✨ Skin limited terdeteksi: ${names} — premium pasar +${lo} – ${hi} sudah ditambahkan ke rentang (kalibrasi listing PlayerAuctions/zeusX).`,
+    resaleLimitedLine: (names, lo, hi) => `✨ Skin limited terdeteksi: ${names}. Premium pasar +${lo} sampai ${hi} sudah ditambahkan ke rentang (kalibrasi listing PlayerAuctions/zeusX).`,
     badgeLimited: 'Limited',
     bpMissing: 'Tidak terdeteksi (mungkin belum punya battlepass aktif).',
     collectionTitle: 'Koleksi Akun',
@@ -169,10 +169,10 @@ const HUB_TEXT = {
     loginBody: (
       <>
         Grab the <C>ssid</C> cookie from your browser once. After that you stay logged in until you
-        change your password — <b>your password never touches this site</b>.
+        change your password. <b>Your password never touches this site.</b>
       </>
     ),
-    step1: "Open & log in on Riot's page (if you're already logged in you'll just see a blank page — that's normal).",
+    step1: "Open & log in on Riot's page (if you're already logged in you'll just see a blank page, that's normal).",
     openRiot: 'Open Riot Login ↗',
     step2: (
       <>
@@ -200,7 +200,7 @@ const HUB_TEXT = {
     heroNote: (priced, owned) => (
       <>
         Estimated from <Hi>{priced} priced skins</Hi> you own ({owned} unique skins total). Based on
-        standard prices per content tier (Select/Deluxe/Premium/Exclusive/Ultra) — <Hi>not</Hi> real
+        standard prices per content tier (Select/Deluxe/Premium/Exclusive/Ultra), <Hi>not</Hi> real
         money spent. Free/battlepass/default skins aren't counted.
       </>
     ),
@@ -208,12 +208,12 @@ const HUB_TEXT = {
     spendTitle: 'Estimated Total Spend',
     spendSkins: (vpStr) => `Premium skins (${vpStr} VP)`,
     spendBp: (n, cost) => `Battlepass (${n} × ${cost} VP)`,
-    spendNote: `Converted using the official 1000-VP pack price (≈ Rp${IDR_PER_VP.toLocaleString('id-ID')}/VP; bigger packs are cheaper, ± Rp100–118/VP). Battlepasses are counted from acts whose paid-track skins you own. Gifted skins and Night Market discounts can make real spend lower — this is an estimate, not a bill. 😄`,
+    spendNote: `Converted using the official 1000-VP pack price (about Rp${IDR_PER_VP.toLocaleString('id-ID')} per VP; bigger packs are cheaper, around Rp100 to Rp118 per VP). Battlepasses are counted from acts whose paid-track skins you own. Gifted skins and Night Market discounts can make real spend lower. This is an estimate, not a bill. 😄`,
     resaleTitle: 'Estimated Account Resale Value',
     resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
-    resaleNote: "Calibrated against real listings on Indonesia's account marketplace (itemku): ±170 skins sells for ≈ Rp4.3M, ±82 skins ≈ Rp2.75M — roughly 10–20% of estimated spend. High ranks raise the price (Immortal ±1.5×, Radiant ±2×). Rare skins (Champions, old bundles) can go above this range.",
+    resaleNote: "Calibrated against real listings on Indonesia's account marketplace (itemku): around 170 skins sells for about Rp4.3M, 82 skins about Rp2.75M, roughly 10 to 20% of estimated spend. High ranks raise the price (Immortal about 1.5x, Radiant 2x). Rare skins (Champions, old bundles) can go above this range.",
     resaleWarning: "⚠️ Market info only: buying or selling accounts violates Riot's Terms of Service and risks a permanent ban.",
-    resaleLimitedLine: (names, lo, hi) => `✨ Limited skins detected: ${names} — a market premium of +${lo} – ${hi} is already added to the range (calibrated from PlayerAuctions/zeusX listings).`,
+    resaleLimitedLine: (names, lo, hi) => `✨ Limited skins detected: ${names}. A market premium of +${lo} to ${hi} is already added to the range (calibrated from PlayerAuctions/zeusX listings).`,
     badgeLimited: 'Limited',
     bpMissing: "Not detected (you may not have an active battlepass).",
     collectionTitle: 'Account Collection',
@@ -672,10 +672,10 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                         <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.resaleTitle}</p>
                           <p className="mt-2 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
-                            {rp(low)} <span className="text-base font-bold text-slate-500">–</span> {rp(high)}
+                            {rp(low)} <span className="text-base font-bold text-slate-500">-</span> {rp(high)}
                           </p>
                           <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            {t.resaleRankLine(overview.identity?.rank?.name || '—', mult)}
+                            {t.resaleRankLine(overview.identity?.rank?.name || '-', mult)}
                           </p>
                           {limited.length > 0 && (
                             <p className="mt-2 max-w-prose text-xs leading-relaxed text-amber-300">
