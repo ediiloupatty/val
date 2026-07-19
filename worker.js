@@ -2,8 +2,29 @@ import {
   fetchShop as riotFetchShop,
   fetchOverview as riotFetchOverview,
   fetchInventoryDetail as riotFetchInventory,
+  reauthFromSsid as riotReauth,
   extractTokens,
 } from './riot.js';
+
+// Resolve request tokens from the body. Prefers a stored `ssid` (long-lived —
+// reauthed to a fresh access token server-side), falling back to raw tokens or
+// a pasted redirect URL. Returns { ok:true, tokens } | { ok:false, error }.
+async function resolveTokens(body) {
+  if (body && body.ssid) {
+    const r = await riotReauth(String(body.ssid));
+    if (r.status !== 'ok') return { ok: false, error: r.error };
+    return { ok: true, tokens: { accessToken: r.accessToken, idToken: r.idToken } };
+  }
+  if (body && body.url) {
+    const t = extractTokens(body.url);
+    if (!t.accessToken) return { ok: false, error: 'URL login tidak valid' };
+    return { ok: true, tokens: t };
+  }
+  if (body && body.accessToken) {
+    return { ok: true, tokens: { accessToken: body.accessToken, idToken: body.idToken || '' } };
+  }
+  return { ok: false, error: 'Sesi tidak valid — login ulang.' };
+}
 
 // Origins allowed to call this API.
 const ALLOWED_ORIGINS = [
@@ -871,36 +892,21 @@ export default {
     if (path === "/api/shop/store" && request.method === "POST") {
       try {
         const body = await request.json();
-        const { url, turnstileToken } = body;
-        // Accept either the pasted redirect URL, or already-extracted tokens.
-        const tokens = url
-          ? extractTokens(url)
-          : { accessToken: body.accessToken, idToken: body.idToken || "" };
-
-        if (!tokens.accessToken) {
-          return new Response(
-            JSON.stringify({ success: false, error: "URL login tidak valid — pastikan menyalin lengkap termasuk bagian setelah #" }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        // Optional bot check (only when Turnstile is configured).
-        if (env.TURNSTILE_SECRET) {
-          const ip = request.headers.get('CF-Connecting-IP') || '';
-          if (!(await verifyTurnstile(env.TURNSTILE_SECRET, turnstileToken, ip))) {
-            return new Response(
-              JSON.stringify({ success: false, error: "Verifikasi bot gagal" }),
-              { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
-            );
-          }
-        }
         if (!(await shopRateOk(env, request))) {
           return new Response(
             JSON.stringify({ success: false, error: "Terlalu banyak percobaan. Pelan-pelan ya." }),
             { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
+        const resolved = await resolveTokens(body);
+        if (!resolved.ok) {
+          return new Response(
+            JSON.stringify({ success: false, error: resolved.error }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
 
-        const result = await riotFetchShop(tokens);
+        const result = await riotFetchShop(resolved.tokens);
         if (result.status === "ok") {
           return new Response(
             JSON.stringify({ success: true, shop: result.shop, nightMarket: result.nightMarket, profile: result.profile }),
@@ -926,20 +932,20 @@ export default {
     if (path === "/api/valorant/overview" && request.method === "POST") {
       try {
         const body = await request.json();
-        const tokens = { accessToken: body.accessToken, idToken: body.idToken || "" };
-        if (!tokens.accessToken) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Sesi tidak valid — login ulang." }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
         if (!(await shopRateOk(env, request))) {
           return new Response(
             JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
             { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
-        const result = await riotFetchOverview(tokens);
+        const resolved = await resolveTokens(body);
+        if (!resolved.ok) {
+          return new Response(
+            JSON.stringify({ success: false, error: resolved.error }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        const result = await riotFetchOverview(resolved.tokens);
         if (result.status === "ok") {
           return new Response(
             JSON.stringify({ success: true, overview: result.overview }),
@@ -964,20 +970,20 @@ export default {
     if (path === "/api/valorant/inventory" && request.method === "POST") {
       try {
         const body = await request.json();
-        const tokens = { accessToken: body.accessToken, idToken: body.idToken || "" };
-        if (!tokens.accessToken) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Sesi tidak valid — login ulang." }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
         if (!(await shopRateOk(env, request))) {
           return new Response(
             JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
             { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
-        const result = await riotFetchInventory(tokens);
+        const resolved = await resolveTokens(body);
+        if (!resolved.ok) {
+          return new Response(
+            JSON.stringify({ success: false, error: resolved.error }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        const result = await riotFetchInventory(resolved.tokens);
         if (result.status === "ok") {
           return new Response(
             JSON.stringify({ success: true, inventory: result.inventory }),

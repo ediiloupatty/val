@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { fetchShop, fetchValorantOverview, fetchValorantInventory } from './api.js';
-import { getTurnstileToken } from './turnstile.js';
-import { AUTH_URL, extractTokens, saveSession, loadSession, clearSession } from './riotSession.js';
+import { RIOT_LOGIN_URL, cleanSsid, saveSsid, loadSsid, clearSsid } from './riotSession.js';
 
-// VALORANT account hub. The user logs in once on Riot's own page (Riot handles
-// captcha + 2FA), pastes the redirect URL, and we keep them logged in — via a
-// browser-stored session — until they log out or the token expires (~1h).
+// VALORANT account hub. The user grabs their long-lived `ssid` cookie once; the
+// Worker reauths it into a fresh access token on every request, so they stay
+// logged in for weeks (until they change their password) with no re-paste.
 // Password never touches our server.
 
 const VP_ICON =
@@ -113,12 +112,11 @@ function Spinner() {
 }
 
 export default function ValorantHub({ onExit, onIdentity, onLogout }) {
-  const [session, setSession] = useState(() => loadSession());
-  const [redirectUrl, setRedirectUrl] = useState('');
+  const [session, setSession] = useState(() => loadSsid()); // ssid string or null
+  const [ssidInput, setSsidInput] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
 
-  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'store' | 'night'
+  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'inventory' | 'store' | 'night'
 
   const [overview, setOverview] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -133,26 +131,26 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
   const [inventoryError, setInventoryError] = useState('');
 
   const doLogout = () => {
-    clearSession();
+    clearSsid();
     setSession(null);
     setOverview(null);
     setStore(null);
     setInventory(null);
     setTab('dashboard');
-    setRedirectUrl('');
+    setSsidInput('');
     onLogout?.();
   };
 
   const handleExpired = () => {
-    clearSession();
+    clearSsid();
     setSession(null);
     setOverview(null);
     setStore(null);
     setInventory(null);
-    setLoginError('Sesi berakhir (token kadaluarsa ~1 jam). Silakan login lagi.');
+    setLoginError('Sesi Riot berakhir (mungkin kamu ganti password atau logout everywhere). Tambahkan ssid lagi.');
   };
 
-  // Load the dashboard when we get a session (login or a persisted one on mount).
+  // Load the dashboard when we get an ssid (login or a persisted one on mount).
   // Depend on `session` ONLY — including the loading/overview state here would let
   // this effect's cleanup cancel its own in-flight request the moment it flips
   // `overviewLoading`, leaving the spinner stuck forever.
@@ -162,8 +160,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     (async () => {
       setOverviewLoading(true);
       setOverviewError('');
-      const turnstileToken = await getTurnstileToken();
-      const res = await fetchValorantOverview(session, turnstileToken);
+      const res = await fetchValorantOverview(session);
       if (cancelled) return;
       setOverviewLoading(false);
       if (!res.ok) {
@@ -171,6 +168,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
         setOverviewError(res.error);
         return;
       }
+      saveSsid(session); // persist only once we know the ssid actually works
       setOverview(res.overview);
       if (res.overview?.identity?.displayName) onIdentity?.(res.overview.identity);
     })();
@@ -183,8 +181,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     if (store || storeLoading || !session) return;
     setStoreLoading(true);
     setStoreError('');
-    const turnstileToken = await getTurnstileToken();
-    const res = await fetchShop(session, turnstileToken);
+    const res = await fetchShop(session);
     setStoreLoading(false);
     if (!res.ok) {
       if (isExpiredError(res.error)) return handleExpired();
@@ -198,8 +195,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     if (inventory || inventoryLoading || !session) return;
     setInventoryLoading(true);
     setInventoryError('');
-    const turnstileToken = await getTurnstileToken();
-    const res = await fetchValorantInventory(session, turnstileToken);
+    const res = await fetchValorantInventory(session);
     setInventoryLoading(false);
     if (!res.ok) {
       if (isExpiredError(res.error)) return handleExpired();
@@ -215,21 +211,17 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
     if (next === 'inventory') loadInventory();
   };
 
-  const handleLogin = async (e) => {
+  const handleLogin = (e) => {
     e.preventDefault();
-    const url = redirectUrl.trim();
-    if (!url || loggingIn) return;
-    const tokens = extractTokens(url);
-    if (!tokens) {
-      setLoginError('URL belum berisi token. Salin URL lengkap dari address bar (harus ada "access_token").');
+    const ssid = cleanSsid(ssidInput);
+    if (!ssid) return;
+    if (ssid.length < 20) {
+      setLoginError('Nilai ssid terlihat terlalu pendek. Pastikan menyalin value cookie "ssid" yang benar.');
       return;
     }
-    setLoggingIn(true);
     setLoginError('');
-    saveSession(tokens);
-    setRedirectUrl('');
-    setSession(tokens); // triggers the overview load effect
-    setLoggingIn(false);
+    setSsidInput('');
+    setSession(ssid); // triggers the overview effect, which validates + persists
   };
 
   return (
@@ -243,14 +235,14 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
           <h1 className="text-lg font-black uppercase tracking-wider text-val-red">Valorant</h1>
         </div>
 
-        {/* ---------- Not logged in: login flow ---------- */}
+        {/* ---------- Not logged in: ssid setup ---------- */}
         {!session && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5 sm:gap-6">
             <div className="rounded-2xl border border-val-accent/30 bg-val-accent/10 p-4 text-sm text-slate-200">
-              <p className="font-bold text-val-accent">🔒 Login lewat halaman Riot asli</p>
+              <p className="font-bold text-val-accent">🔒 Login sekali, tahan berminggu-minggu</p>
               <p className="mt-1.5 leading-relaxed text-slate-300">
-                Kamu login di halaman Riot sendiri — <b>password kamu tidak pernah masuk ke web ini</b>.
-                Setelah login, kamu tetap masuk sampai klik Logout (atau ~1 jam saat token Riot kadaluarsa).
+                Ambil cookie <code className="rounded bg-white/10 px-1 py-0.5 text-xs">ssid</code> dari browser sekali.
+                Setelah itu kamu tetap login otomatis sampai ganti password — <b>password tidak pernah masuk ke web ini</b>.
               </p>
             </div>
 
@@ -258,38 +250,45 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">1</span>
                 <div className="flex-1">
-                  <p className="text-sm text-slate-300">Buka halaman login Riot, lalu login seperti biasa.</p>
-                  <a href={AUTH_URL} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-2 rounded-xl bg-val-red px-5 py-2.5 text-sm font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90">
+                  <p className="text-sm text-slate-300">Buka & login di halaman Riot (kalau sudah login, tinggal muncul halaman blank — itu normal).</p>
+                  <a href={RIOT_LOGIN_URL} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-2 rounded-xl bg-val-red px-5 py-2.5 text-sm font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90">
                     Buka Login Riot ↗
                   </a>
                 </div>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">2</span>
-                <p className="flex-1 text-sm text-slate-300">
-                  Setelah login, browser pindah ke halaman <b className="text-white">error/blank</b> di{' '}
-                  <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">localhost</code> — itu normal.
-                  <b className="text-white"> Salin seluruh URL</b> dari address bar.
+                <p className="flex-1 text-sm leading-relaxed text-slate-300">
+                  Di tab yang sama, buka alamat <code className="break-all rounded bg-white/10 px-1 py-0.5 text-xs">auth.riotgames.com</code>,
+                  lalu tekan <b className="text-white">F12</b> → tab <b className="text-white">Application</b> (Chrome) / <b className="text-white">Storage</b> (Firefox)
+                  → <b className="text-white">Cookies</b> → <code className="break-all rounded bg-white/10 px-1 py-0.5 text-xs">https://auth.riotgames.com</code>.
                 </p>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-val-red text-sm font-black">3</span>
-                <p className="flex-1 text-sm text-slate-300">Tempel URL-nya di sini:</p>
+                <p className="flex-1 text-sm leading-relaxed text-slate-300">
+                  Cari baris bernama <code className="rounded bg-white/10 px-1 py-0.5 text-xs">ssid</code>, salin isi kolom <b className="text-white">Value</b>-nya, lalu tempel di sini:
+                </p>
               </li>
             </ol>
 
             <form onSubmit={handleLogin} className="flex flex-col gap-4">
               <input
-                type="text"
-                value={redirectUrl}
-                onChange={(e) => setRedirectUrl(e.target.value)}
+                type="password"
+                value={ssidInput}
+                onChange={(e) => setSsidInput(e.target.value)}
+                autoComplete="off"
                 className="w-full rounded-xl border border-white/10 bg-val-panel px-4 py-3 text-sm text-white outline-none transition-colors focus:border-val-accent"
-                placeholder="http://localhost/redirect#access_token=..."
+                placeholder="Tempel value ssid di sini…"
               />
               {loginError && <p className="text-sm font-semibold text-val-red">{loginError}</p>}
-              <button type="submit" disabled={loggingIn || !redirectUrl} className="flex items-center justify-center gap-2 rounded-xl bg-val-accent px-6 py-3 font-black uppercase tracking-wider text-val-dark transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="submit" disabled={!ssidInput} className="flex items-center justify-center gap-2 rounded-xl bg-val-accent px-6 py-3 font-black uppercase tracking-wider text-val-dark transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
                 Masuk
               </button>
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Cookie <code className="rounded bg-white/10 px-1 py-0.5">ssid</code> = kunci sesi akunmu. Jangan bagikan ke siapa pun.
+                Disimpan hanya di browser ini untuk auto-login; hapus dengan tombol Logout.
+              </p>
             </form>
           </div>
         )}

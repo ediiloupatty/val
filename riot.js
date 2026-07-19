@@ -49,6 +49,51 @@ const CLIENT_PLATFORM = btoa(JSON.stringify({
 
 const FALLBACK_VERSION = 'release-09.00-shipping-9-2444158';
 
+// A Riot-client-looking UA for the reauth request.
+const USER_AGENT =
+  'RiotClient/63.0.9.4909983.4789131 rso-auth (Windows;10;;Professional, x64)';
+
+// Cookie reauth: exchange a long-lived `ssid` cookie for a fresh access token
+// without a password or captcha. Riot 303-redirects to the localhost URI with
+// the token in the fragment when the ssid is still valid; a non-token redirect
+// means the ssid expired (e.g. the user changed their password).
+// Returns { status:'ok', accessToken, idToken, expiresAt } | { status:'error', error }.
+export async function reauthFromSsid(ssid) {
+  const url =
+    'https://auth.riotgames.com/authorize' +
+    '?redirect_uri=http%3A%2F%2Flocalhost%2Fredirect' +
+    '&client_id=riot-client' +
+    '&response_type=token%20id_token' +
+    '&nonce=1' +
+    '&scope=openid%20link%20ban%20lol_region%20account';
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: { Cookie: `ssid=${ssid}`, 'User-Agent': USER_AGENT },
+      redirect: 'manual',
+    });
+  } catch {
+    return { status: 'error', error: 'Gagal menghubungi Riot' };
+  }
+  const location = res.headers.get('location') || '';
+  if (!location.includes('access_token')) {
+    return { status: 'error', error: 'ssid tidak valid atau kadaluarsa. Ambil ulang dari browser.' };
+  }
+  const tokens = extractTokens(location);
+  if (!tokens.accessToken) {
+    return { status: 'error', error: 'Gagal membaca token dari ssid' };
+  }
+  const frag = location.split('#')[1] || '';
+  const expiresIn = Number(new URLSearchParams(frag).get('expires_in')) || 3600;
+  return {
+    status: 'ok',
+    accessToken: tokens.accessToken,
+    idToken: tokens.idToken,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+}
+
 function shardFor(region) {
   if (region === 'latam' || region === 'br') return 'na';
   return region; // na, eu, ap, kr

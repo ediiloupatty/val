@@ -218,18 +218,14 @@ export async function fetchDonations() {
  * tokens. Returns { ok, shop, nightMarket, profile } | { ok: false, error }.
  * Several upstream Riot calls run server-side, so this gets a longer timeout.
  */
-export async function fetchShop(tokens, turnstileToken) {
+export async function fetchShop(ssid) {
   try {
     const res = await fetchWithTimeout(
       `${API_URL}/api/shop/store`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessToken: tokens.accessToken,
-          idToken: tokens.idToken,
-          turnstileToken,
-        }),
+        body: JSON.stringify({ ssid }),
       },
       25000
     );
@@ -248,18 +244,14 @@ export async function fetchShop(tokens, turnstileToken) {
  * account stats, battlepass) using stored session tokens.
  * Returns { ok: true, overview } | { ok: false, error }.
  */
-export async function fetchValorantOverview(tokens, turnstileToken) {
+export async function fetchValorantOverview(ssid) {
   try {
     const res = await fetchWithTimeout(
       `${API_URL}/api/valorant/overview`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessToken: tokens.accessToken,
-          idToken: tokens.idToken,
-          turnstileToken,
-        }),
+        body: JSON.stringify({ ssid }),
       },
       30000
     );
@@ -275,18 +267,14 @@ export async function fetchValorantOverview(tokens, turnstileToken) {
  * Fetches the detailed owned-skins list using stored session tokens.
  * Returns { ok: true, inventory } | { ok: false, error }.
  */
-export async function fetchValorantInventory(tokens, turnstileToken) {
+export async function fetchValorantInventory(ssid) {
   try {
     const res = await fetchWithTimeout(
       `${API_URL}/api/valorant/inventory`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessToken: tokens.accessToken,
-          idToken: tokens.idToken,
-          turnstileToken,
-        }),
+        body: JSON.stringify({ ssid }),
       },
       30000
     );
