@@ -130,6 +130,35 @@ function IdentityHeader({ identity, onLogout }) {
   );
 }
 
+// One skin row in the Inventory tab. Free skins (no price) show a quiet
+// "Gratis" badge instead of a VP price.
+function InventorySkinRow({ skin }) {
+  return (
+    <div
+      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3"
+      style={skin.tierColor ? { borderColor: `${skin.tierColor}55` } : undefined}
+    >
+      {skin.image ? (
+        <img src={skin.image} alt="" className="h-9 w-20 shrink-0 object-contain sm:h-10 sm:w-24" loading="lazy" />
+      ) : (
+        <div className="h-9 w-20 shrink-0 rounded bg-white/5 sm:h-10 sm:w-24" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-white">{skin.name}</p>
+        {skin.price != null ? (
+          <span className="flex items-center gap-1 text-xs text-val-accent">
+            <img src={VP_ICON} alt="VP" className="h-3.5 w-3.5" />
+            <span className="font-bold tabular-nums">{vp(skin.price)}</span>
+          </span>
+        ) : (
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Gratis</span>
+        )}
+      </div>
+      {skin.tierIcon && <img src={skin.tierIcon} alt="" className="h-5 w-5 shrink-0" />}
+    </div>
+  );
+}
+
 function Spinner() {
   return (
     <div className="flex justify-center py-12">
@@ -433,39 +462,51 @@ export default function ValorantHub({ onExit, onIdentity, onLogout }) {
               <>
                 {inventoryLoading && <Spinner />}
                 {inventoryError && <p className="text-sm font-semibold text-val-red">{inventoryError}</p>}
-                {inventory && (
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <StatCard label="Total skin dimiliki" value={vp(inventory.count)} />
-                      <StatCard label="Nilai (est.)" value={`${vp(inventory.totalValueVp)} VP`} sub="Estimasi dari content tier" />
-                    </div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {inventory.skins.map((s) => (
-                        <div
-                          key={s.id}
-                          className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3"
-                          style={s.tierColor ? { borderColor: `${s.tierColor}55` } : undefined}
-                        >
-                          {s.image ? (
-                            <img src={s.image} alt="" className="h-9 w-20 shrink-0 object-contain sm:h-10 sm:w-24" loading="lazy" />
-                          ) : (
-                            <div className="h-9 w-20 shrink-0 rounded bg-white/5 sm:h-10 sm:w-24" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold text-white">{s.name}</p>
-                            {s.price != null && (
-                              <span className="flex items-center gap-1 text-xs text-val-accent">
-                                <img src={VP_ICON} alt="VP" className="h-3.5 w-3.5" />
-                                <span className="font-bold tabular-nums">{vp(s.price)}</span>
-                              </span>
-                            )}
+                {inventory && (() => {
+                  // Paid skins have a content tier (and thus a price estimate);
+                  // free ones (default/battlepass/event) don't.
+                  const paidSkins = inventory.skins.filter((s) => s.price != null);
+                  const freeSkins = inventory.skins.filter((s) => s.price == null);
+                  return (
+                    <div className="flex flex-col gap-5">
+                      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                        <StatCard label="Skin Premium" value={vp(paidSkins.length)} sub="Punya content tier" />
+                        <StatCard label="Skin Gratis" value={vp(freeSkins.length)} sub="Default / battlepass" />
+                        <StatCard label="Nilai (est.)" value={`${vp(inventory.totalValueVp)}`} sub="VP, dari content tier" />
+                      </div>
+
+                      {paidSkins.length > 0 && (
+                        <div className="flex flex-col gap-3">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-val-accent">
+                            Skin Premium · {vp(paidSkins.length)}
+                          </p>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {paidSkins.map((s) => (
+                              <InventorySkinRow key={s.id} skin={s} />
+                            ))}
                           </div>
-                          {s.tierIcon && <img src={s.tierIcon} alt="" className="h-5 w-5 shrink-0" />}
                         </div>
-                      ))}
+                      )}
+
+                      {freeSkins.length > 0 && (
+                        <div className="flex flex-col gap-3">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Skin Gratis / Battlepass · {vp(freeSkins.length)}
+                          </p>
+                          <p className="-mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                            Skin tanpa content tier: bawaan default, hadiah battlepass, atau event. Riot tidak membedakan
+                            cara mendapatkannya, jadi pembagian ini berdasarkan ada/tidaknya tier harga.
+                          </p>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {freeSkins.map((s) => (
+                              <InventorySkinRow key={s.id} skin={s} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </>
             )}
 
