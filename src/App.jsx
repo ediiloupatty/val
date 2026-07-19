@@ -276,6 +276,7 @@ export default function App() {
             onExit={() => setView('landing')}
             onIdentity={handleValorantIdentity}
             onLogout={handleValorantLogout}
+            lang={lang}
           />
         </Suspense>
       ) : (
