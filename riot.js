@@ -309,6 +309,12 @@ function estimateSkinPrice(entry) {
   return (entry.isMelee ? TIER_PRICE_MELEE : TIER_PRICE)[entry.tier] ?? null;
 }
 
+// Limited (discontinued) skins that carry a real market premium on account
+// marketplaces beyond their standard tier price: the Champions series (sold
+// only during each year's event) and the Arcane Sheriff. Detected by name.
+const LIMITED_SKIN_RE = /^champions\s+\d{4}\b|^arcane\s+sheriff$/i;
+const isLimitedSkin = (name) => LIMITED_SKIN_RE.test((name || '').trim());
+
 // Skin-level UUIDs handed out as battlepass/event contract rewards. Battlepass
 // skins DO carry a content tier (Select/Deluxe), so the tier alone can't tell
 // bought from earned — but owning a level that appears as a contract reward
@@ -394,10 +400,12 @@ async function getInventory(headers, shard, puuid) {
   const seen = new Set();
   let collectionValueVp = 0;
   let pricedSkinCount = 0;
+  const limitedSkins = [];
   for (const levelId of owned) {
     const entry = index[levelId];
     if (!entry || seen.has(entry.uuid)) continue;
     seen.add(entry.uuid);
+    if (isLimitedSkin(entry.name)) limitedSkins.push(entry.name);
     if (earnedSkinUuids.has(entry.uuid)) continue; // battlepass/event reward, not bought
     const price = estimateSkinPrice(entry);
     if (price != null) {
@@ -411,6 +419,7 @@ async function getInventory(headers, shard, puuid) {
     pricedSkinCount,
     collectionValueVp,
     battlepassBoughtCount: ownedPasses.size,
+    limitedSkins,
   };
 }
 
@@ -615,6 +624,7 @@ export async function fetchInventoryDetail(tokens) {
       image: entry.image,
       price,
       source: earned ? 'battlepass' : price != null ? 'premium' : 'standard',
+      limited: isLimitedSkin(entry.name),
       tierColor: tier?.color || null,
       tierIcon: tier?.icon || null,
     });

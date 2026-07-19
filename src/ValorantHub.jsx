@@ -44,6 +44,31 @@ function rankMultiplier(rankName) {
   return 1.0;
 }
 
+// Market premium for limited (discontinued) skins on top of the base resale
+// range, per skin. Calibrated from account-market listings (PlayerAuctions,
+// zeusX, EpicNPC — Jul 2026): Champions 2021 bundle accounts trade at $76–192
+// (≈ Rp1,2–3,1jt for the Vandal+Karambit pair); later Champions years and the
+// Arcane Sheriff carry smaller premiums. First matching pattern wins.
+const LIMITED_PREMIUMS = [
+  [/champions\s*2021/i, 600_000, 1_500_000],
+  [/champions\s*2022/i, 300_000, 800_000],
+  [/champions\s*2023/i, 200_000, 500_000],
+  [/champions/i, 150_000, 400_000],
+  [/arcane\s*sheriff/i, 100_000, 300_000],
+];
+function limitedPremium(names) {
+  let low = 0;
+  let high = 0;
+  for (const name of names || []) {
+    const hit = LIMITED_PREMIUMS.find(([re]) => re.test(name));
+    if (hit) {
+      low += hit[1];
+      high += hit[2];
+    }
+  }
+  return { low, high };
+}
+
 // Inline styling helpers for the localized strings below.
 const C = ({ children }) => (
   <code className="break-all rounded bg-white/10 px-1 py-0.5 text-xs">{children}</code>
@@ -108,6 +133,8 @@ const HUB_TEXT = {
     resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
     resaleNote: 'Kalibrasi dari listing nyata pasar akun Indonesia (itemku): akun ±170 skin laku ≈ Rp4,3jt, ±82 skin ≈ Rp2,75jt — sekitar 10–20% dari estimasi pengeluaran. Rank tinggi menaikkan harga (Immortal ±1,5×, Radiant ±2×). Skin langka (Champions, bundle lawas) bisa di atas rentang ini.',
     resaleWarning: '⚠️ Sekadar info pasar: jual-beli akun melanggar Terms of Service Riot dan berisiko banned permanen.',
+    resaleLimitedLine: (names, lo, hi) => `✨ Skin limited terdeteksi: ${names} — premium pasar +${lo} – ${hi} sudah ditambahkan ke rentang (kalibrasi listing PlayerAuctions/zeusX).`,
+    badgeLimited: 'Limited',
     bpMissing: 'Tidak terdeteksi (mungkin belum punya battlepass aktif).',
     collectionTitle: 'Koleksi Akun',
     invStatPremium: 'Skin Premium',
@@ -186,6 +213,8 @@ const HUB_TEXT = {
     resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
     resaleNote: "Calibrated against real listings on Indonesia's account marketplace (itemku): ±170 skins sells for ≈ Rp4.3M, ±82 skins ≈ Rp2.75M — roughly 10–20% of estimated spend. High ranks raise the price (Immortal ±1.5×, Radiant ±2×). Rare skins (Champions, old bundles) can go above this range.",
     resaleWarning: "⚠️ Market info only: buying or selling accounts violates Riot's Terms of Service and risks a permanent ban.",
+    resaleLimitedLine: (names, lo, hi) => `✨ Limited skins detected: ${names} — a market premium of +${lo} – ${hi} is already added to the range (calibrated from PlayerAuctions/zeusX listings).`,
+    badgeLimited: 'Limited',
     bpMissing: "Not detected (you may not have an active battlepass).",
     collectionTitle: 'Account Collection',
     invStatPremium: 'Premium Skins',
@@ -343,7 +372,14 @@ function InventorySkinRow({ skin, t }) {
         <div className="h-9 w-20 shrink-0 rounded bg-white/5 sm:h-10 sm:w-24" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold text-white">{skin.name}</p>
+        <p className="truncate text-sm font-bold text-white">
+          {skin.name}
+          {skin.limited && (
+            <span className="ml-1.5 rounded bg-amber-400/15 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider text-amber-300">
+              {t.badgeLimited}
+            </span>
+          )}
+        </p>
         {skin.price != null ? (
           <span className="flex items-center gap-1 text-xs text-val-accent">
             <img src={VP_ICON} alt="VP" className="h-3.5 w-3.5" />
@@ -627,9 +663,11 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                       const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
                       const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
                       const mult = rankMultiplier(overview.identity?.rank?.name);
-                      const low = spendIdr * RESALE_RATE_LOW * mult;
-                      const high = spendIdr * RESALE_RATE_HIGH * mult;
-                      if (spendIdr <= 0) return null;
+                      const limited = overview.inventory.limitedSkins || [];
+                      const prem = limitedPremium(limited);
+                      const low = spendIdr * RESALE_RATE_LOW * mult + prem.low;
+                      const high = spendIdr * RESALE_RATE_HIGH * mult + prem.high;
+                      if (spendIdr <= 0 && prem.high <= 0) return null;
                       return (
                         <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.resaleTitle}</p>
@@ -639,6 +677,11 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                           <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                             {t.resaleRankLine(overview.identity?.rank?.name || '—', mult)}
                           </p>
+                          {limited.length > 0 && (
+                            <p className="mt-2 max-w-prose text-xs leading-relaxed text-amber-300">
+                              {t.resaleLimitedLine(limited.join(', '), rp(prem.low), rp(prem.high))}
+                            </p>
+                          )}
                           <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">{t.resaleNote}</p>
                           <p className="mt-2 max-w-prose text-[11px] leading-relaxed text-slate-500">{t.resaleWarning}</p>
                         </div>
