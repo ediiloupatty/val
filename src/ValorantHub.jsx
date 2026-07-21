@@ -7,6 +7,8 @@ import { RIOT_LOGIN_URL, cleanSsid, saveSsid, loadSsid, clearSsid } from './riot
 // logged in for weeks (until they change their password) with no re-paste.
 // Password never touches our server.
 
+const LOGIN_TUTORIAL_URL = 'https://youtu.be/a2qu0XThnJo';
+
 const VP_ICON =
   'https://media.valorant-api.com/currencies/85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741/displayicon.png';
 const RAD_ICON =
@@ -92,6 +94,7 @@ const HUB_TEXT = {
         ganti password. <b>Password tidak pernah masuk ke web ini.</b>
       </>
     ),
+    watchTutorial: '▶ Tonton Cara Login (Video) ↗',
     step1: 'Buka & login di halaman Riot (kalau sudah login, tinggal muncul halaman blank, itu normal).',
     openRiot: 'Buka Login Riot ↗',
     step2: (
@@ -172,6 +175,7 @@ const HUB_TEXT = {
         change your password. <b>Your password never touches this site.</b>
       </>
     ),
+    watchTutorial: '▶ Watch How to Log In (Video) ↗',
     step1: "Open & log in on Riot's page (if you're already logged in you'll just see a blank page, that's normal).",
     openRiot: 'Open Riot Login ↗',
     step2: (
@@ -538,6 +542,15 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
               <p className="font-bold text-val-accent">{t.loginTitle}</p>
               <p className="mt-1.5 leading-relaxed text-slate-300">{t.loginBody}</p>
             </div>
+
+            <a
+              href={LOGIN_TUTORIAL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-xl border border-val-accent/40 bg-val-accent/10 px-5 py-3 text-sm font-black uppercase tracking-wider text-val-accent transition-colors hover:bg-val-accent/20"
+            >
+              {t.watchTutorial}
+            </a>
 
             <ol className="flex flex-col gap-4">
               <li className="flex gap-3">
