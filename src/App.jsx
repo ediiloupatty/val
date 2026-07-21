@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Landing from './Landing.jsx';
-import { getDeviceId, fetchProfile, saveProfile, submitScore, startSession } from './api.js';
+import { getDeviceId, fetchProfile, saveProfile, submitScore, startSession, linkValorantProfile } from './api.js';
 import { getTurnstileToken } from './turnstile.js';
 import { TEXT } from './translations.js';
 
@@ -133,6 +133,17 @@ export default function App() {
         setName(nextName);
         setBest(nextBest);
         writeProfileCache(nextName, nextBest);
+        // The DB is the source of truth for a linked Valorant identity too —
+        // this is what makes the profile show it on any browser/device, not
+        // just the one that logged into the Hub.
+        if (dbData.valorant) {
+          setValorantProfile(dbData.valorant);
+          try {
+            localStorage.setItem(VALORANT_KEY, JSON.stringify(dbData.valorant));
+          } catch {
+            /* ignore */
+          }
+        }
       }
       setProfileLoading(false);
     }
@@ -170,6 +181,7 @@ export default function App() {
       /* ignore */
     }
     if (identity.displayName) handleSetName(identity.displayName.slice(0, 20));
+    if (identity.puuid) linkValorantProfile(deviceId, identity);
   };
 
   // Logout from the Valorant hub: drop the cached identity display. (The token

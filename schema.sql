@@ -4,8 +4,26 @@ CREATE TABLE IF NOT EXISTS profiles (
   score INTEGER DEFAULT 0,
   accuracy REAL DEFAULT 0,
   split REAL DEFAULT 0,
-  updated_at TEXT
+  updated_at TEXT,
+  riot_puuid TEXT,
+  valorant_name TEXT,
+  valorant_card TEXT,
+  valorant_level INTEGER,
+  valorant_rank TEXT,
+  valorant_rank_icon TEXT,
+  valorant_rank_color TEXT,
+  valorant_linked_at TEXT
 );
+
+-- Migration for existing databases (no-op on fresh installs above):
+--   ALTER TABLE profiles ADD COLUMN riot_puuid TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_name TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_card TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_level INTEGER;
+--   ALTER TABLE profiles ADD COLUMN valorant_rank TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_rank_icon TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_rank_color TEXT;
+--   ALTER TABLE profiles ADD COLUMN valorant_linked_at TEXT;
 
 -- One row per finished session, used for the weekly leaderboard.
 -- mode / target_size are nullable: rows logged before per-mode leaderboards

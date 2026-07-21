@@ -571,7 +571,7 @@ export async function fetchOverview(tokens) {
     withTimeout(getBattlepass(headers, shard, puuid).catch(() => null), 12000, null),
   ]);
 
-  return { status: 'ok', overview: { identity, wallet, inventory, account, battlepass } };
+  return { status: 'ok', overview: { identity, wallet, inventory, account, battlepass, puuid } };
 }
 
 // The detailed owned-skins list. Resolves owned skin-level UUIDs to distinct

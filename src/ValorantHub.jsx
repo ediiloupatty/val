@@ -464,7 +464,9 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
       }
       saveSsid(session); // persist only once we know the ssid actually works
       setOverview(res.overview);
-      if (res.overview?.identity?.displayName) onIdentity?.(res.overview.identity);
+      if (res.overview?.identity?.displayName) {
+        onIdentity?.({ ...res.overview.identity, puuid: res.overview.puuid });
+      }
     })();
     return () => {
       cancelled = true;

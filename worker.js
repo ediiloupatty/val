@@ -388,7 +388,7 @@ export default {
 
       try {
         const { results } = await env.DB.prepare(
-          "SELECT name, score, accuracy, split FROM profiles WHERE device_id = ?"
+          "SELECT name, score, accuracy, split, riot_puuid, valorant_name, valorant_card, valorant_level, valorant_rank, valorant_rank_icon, valorant_rank_color FROM profiles WHERE device_id = ?"
         ).bind(deviceId).all();
 
         if (!results || results.length === 0) {
@@ -397,7 +397,7 @@ export default {
             JSON.stringify({
               success: true,
               exists: false,
-              data: { name: "Agent", best: { score: 0, accuracy: 0, split: 0 } }
+              data: { name: "Agent", best: { score: 0, accuracy: 0, split: 0 }, valorant: null }
             }),
             { headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
@@ -410,7 +410,14 @@ export default {
             score: Number(row.score) || 0,
             accuracy: Number(row.accuracy) || 0,
             split: Number(row.split) || 0
-          }
+          },
+          valorant: row.riot_puuid ? {
+            puuid: row.riot_puuid,
+            displayName: row.valorant_name,
+            card: row.valorant_card,
+            level: row.valorant_level != null ? Number(row.valorant_level) : null,
+            rank: { name: row.valorant_rank, icon: row.valorant_rank_icon, color: row.valorant_rank_color }
+          } : null
         };
 
         return new Response(
@@ -490,6 +497,84 @@ export default {
         console.error("profile POST error:", err);
         return new Response(
           JSON.stringify({ success: false, error: "Could not save profile" }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
+    // POST /api/valorant/link — persists the Riot identity (name/card/level/rank)
+    // from a Hub login onto the device's profile row, so it survives logout and
+    // shows up on any browser/device using the same deviceId. Leaves name/score
+    // untouched to avoid racing the existing /api/profile save path.
+    if (path === "/api/valorant/link" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const { deviceId, puuid, displayName, card, level, rank } = body;
+
+        if (!deviceId || !puuid || typeof puuid !== "string") {
+          return new Response(
+            JSON.stringify({ success: false, error: "Missing required fields: deviceId, puuid" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        if (!isValidDeviceId(deviceId)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Invalid deviceId format" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        if (!/^[a-zA-Z0-9-]{10,80}$/.test(puuid)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Invalid puuid format" }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+
+        if (!(await withinRateLimit(env, request, deviceId))) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Too many requests. Please slow down." }),
+            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+
+        const cleanName = displayName ? sanitizeName(displayName) : null;
+        const cleanLevel = Number.isFinite(Number(level)) ? Math.round(Number(level)) : null;
+        const linkedAt = new Date().toISOString();
+
+        await env.DB.prepare(`
+          INSERT INTO profiles (device_id, name, updated_at, riot_puuid, valorant_name, valorant_card, valorant_level, valorant_rank, valorant_rank_icon, valorant_rank_color, valorant_linked_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(device_id) DO UPDATE SET
+            riot_puuid = excluded.riot_puuid,
+            valorant_name = excluded.valorant_name,
+            valorant_card = excluded.valorant_card,
+            valorant_level = excluded.valorant_level,
+            valorant_rank = excluded.valorant_rank,
+            valorant_rank_icon = excluded.valorant_rank_icon,
+            valorant_rank_color = excluded.valorant_rank_color,
+            valorant_linked_at = excluded.valorant_linked_at
+        `).bind(
+          deviceId,
+          cleanName || "Agent",
+          linkedAt,
+          puuid,
+          cleanName,
+          card || null,
+          cleanLevel,
+          rank?.name || null,
+          rank?.icon || null,
+          rank?.color || null,
+          linkedAt
+        ).run();
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      } catch (err) {
+        console.error("valorant link error:", err);
+        return new Response(
+          JSON.stringify({ success: false, error: "Could not link Valorant account" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }

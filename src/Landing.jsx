@@ -419,28 +419,43 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
-          {valorantProfile?.card && (
+        <div className="flex shrink-0 items-center gap-2.5 rounded-2xl border border-white/10 bg-black/30 p-1.5 pr-4 backdrop-blur-sm md:gap-3 md:pr-5">
+          {valorantProfile?.card ? (
             <img
               src={valorantProfile.card}
               alt=""
-              className="h-9 w-9 shrink-0 rounded-lg object-cover md:h-10 md:w-10"
+              className="h-9 w-9 shrink-0 rounded-xl object-cover ring-1 ring-white/15 md:h-10 md:w-10"
             />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-black text-slate-300 ring-1 ring-white/15 md:h-10 md:w-10">
+              {(name || 'A').charAt(0).toUpperCase()}
+            </div>
           )}
-          <div className="text-right">
+          <div className="min-w-0 text-left leading-tight">
             {profileLoading ? (
-              <div className="mb-1 ml-auto h-3 w-20 animate-pulse rounded bg-white/10" />
+              <>
+                <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+                <div className="mt-1.5 h-2.5 w-14 animate-pulse rounded bg-white/10" />
+              </>
             ) : (
-              <p
-                className={`text-sm md:text-base font-black tracking-wide truncate max-w-[140px] ${
-                  name === 'Agent' ? 'text-slate-500' : 'text-white'
-                }`}
-              >
-                {name}
-              </p>
+              <>
+                <p
+                  className={`truncate max-w-[120px] text-sm font-black tracking-wide md:max-w-[160px] md:text-base ${
+                    name === 'Agent' ? 'text-slate-500' : 'text-white'
+                  }`}
+                >
+                  {name}
+                </p>
+                <p className="mt-0.5 flex items-baseline gap-1 whitespace-nowrap">
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500 md:text-[10px]">
+                    {t.bestScoreLabel}
+                  </span>
+                  <span className="text-xs font-black tabular-nums text-val-accent md:text-sm">
+                    {best.score.toLocaleString()}
+                  </span>
+                </p>
+              </>
             )}
-            <p className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-slate-400">{t.bestScoreLabel}</p>
-            <p className="text-lg md:text-xl font-black tabular-nums text-val-accent">{best.score}</p>
           </div>
         </div>
       </header>

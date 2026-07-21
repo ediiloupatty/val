@@ -104,6 +104,37 @@ export async function saveProfile(deviceId, name, best) {
 }
 
 /**
+ * Persists a Valorant Hub login's identity (puuid, display name, card, level,
+ * rank) onto the device's profile row, so it survives logout and shows up on
+ * any browser/device using the same deviceId. Fire-and-forget, non-fatal.
+ */
+export async function linkValorantProfile(deviceId, identity) {
+  if (!deviceId || !identity?.puuid) return { ok: false };
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/api/valorant/link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId,
+        puuid: identity.puuid,
+        displayName: identity.displayName || null,
+        card: identity.card || null,
+        level: identity.level ?? null,
+        rank: identity.rank || null,
+      }),
+    });
+    if (!res.ok) {
+      console.warn('[API] Worker responded with status:', res.status);
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.warn('[API] Could not link Valorant profile:', err.message);
+    return { ok: false };
+  }
+}
+
+/**
  * Requests a signed session token from the backend at game start. The token is
  * later required by submitScore(), so the leaderboard only accepts scores from a
  * session this backend authorized. Returns the token string or null on failure.
