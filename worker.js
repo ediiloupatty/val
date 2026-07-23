@@ -946,16 +946,54 @@ export default {
       }
     }
 
-    // GET /api/bg/<key> — stream one background image from R2 (cached at edge).
+    // GET /api/bg/<key> — stream one background asset (image or video) from R2
+    // (cached at edge). Supports HTTP Range requests, which browsers use when
+    // streaming <video> sources.
     if (path.startsWith("/api/bg/") && request.method === "GET") {
       if (!env.BG_BUCKET) return new Response("Not Found", { status: 404, headers: corsHeaders });
       const key = decodeURIComponent(path.slice("/api/bg/".length));
+      // Content type by extension when the upload didn't set one.
+      const contentType = (obj) => {
+        if (obj.httpMetadata?.contentType) return obj.httpMetadata.contentType;
+        if (/\.mp4$/i.test(key)) return "video/mp4";
+        if (/\.webm$/i.test(key)) return "video/webm";
+        if (/\.png$/i.test(key)) return "image/png";
+        if (/\.jpe?g$/i.test(key)) return "image/jpeg";
+        return "image/webp";
+      };
       try {
+        const rangeHeader = request.headers.get("Range");
+        const rangeMatch = rangeHeader && /bytes=(\d+)-(\d*)/.exec(rangeHeader);
+        if (rangeMatch) {
+          const start = Number(rangeMatch[1]);
+          const end = rangeMatch[2] ? Number(rangeMatch[2]) : undefined;
+          const obj = await env.BG_BUCKET.get(key, {
+            range: end !== undefined
+              ? { offset: start, length: end - start + 1 }
+              : { offset: start },
+          });
+          if (!obj) return new Response("Not Found", { status: 404, headers: corsHeaders });
+          const size = obj.size; // full object size
+          const endByte = end !== undefined ? Math.min(end, size - 1) : size - 1;
+          return new Response(obj.body, {
+            status: 206,
+            headers: {
+              "Content-Type": contentType(obj),
+              "Content-Range": `bytes ${start}-${endByte}/${size}`,
+              "Content-Length": String(endByte - start + 1),
+              "Accept-Ranges": "bytes",
+              "Cache-Control": "public, max-age=86400",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
+        }
         const obj = await env.BG_BUCKET.get(key);
         if (!obj) return new Response("Not Found", { status: 404, headers: corsHeaders });
         return new Response(obj.body, {
           headers: {
-            "Content-Type": obj.httpMetadata?.contentType || "image/webp",
+            "Content-Type": contentType(obj),
+            "Content-Length": String(obj.size),
+            "Accept-Ranges": "bytes",
             "Cache-Control": "public, max-age=86400",
             "Access-Control-Allow-Origin": "*",
           },

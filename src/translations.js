@@ -2,6 +2,8 @@ export const TEXT = {
   en: {
     // Landing Page
     bestScoreLabel: 'Best Score',
+    globalRank: 'Global Rank',
+    levelLabel: 'Level',
     play: 'Play',
     profile: 'Profile',
     credits: 'Credits',
@@ -150,6 +152,8 @@ export const TEXT = {
   id: {
     // Landing Page
     bestScoreLabel: 'Skor Terbaik',
+    globalRank: 'Peringkat Global',
+    levelLabel: 'Level',
     play: 'Main',
     profile: 'Profil',
     credits: 'Kredit',

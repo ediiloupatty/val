@@ -24,3 +24,6 @@ pnpm-debug.log*
 
 # Local design sources / asset backups (originals; optimized versions live in public/)
 design/
+
+# Background video staging (uploaded to R2, not served from the app bundle)
+public/video_bg/

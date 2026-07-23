@@ -11,22 +11,15 @@ const LB_MODE_TABS = [
   ['strafe', 'lbModeStrafe'],
 ];
 
-// Landing background (converted from PNG → WebP for a much smaller file).
+// Static landing background — poster/fallback while the video loads, and the
+// permanent background on mobile / data-saver connections.
 const BG_URL = '/img/jett-background.webp';
 
-// Rotating landing background ("wallpaper of the day"). When on, one wallpaper
-// is chosen deterministically per ROTATE_WINDOW_DAYS window, so it's identical
-// on every reload within that window (no random flicker) and changes on its own
-// when the window rolls over. The choice is cached in localStorage + preloaded,
-// so reloads paint the right image immediately with no Jett-then-swap flash.
-const ROTATE_BG = true;
-const ROTATE_WINDOW_DAYS = 14; // length of each wallpaper window (14 = fortnightly)
-// Rotation is anchored: window 0 begins at ROTATE_ANCHOR and shows
-// ROTATE_START_KEY; each window after advances one wallpaper through the sorted
-// R2 pool, wrapping around. This lets us pin which wallpaper shows "now".
-const ROTATE_ANCHOR = Date.UTC(2026, 5, 14); // 2026-06-14
-const ROTATE_START_KEY = 'zhranx15-05'; // wallpaper for the current window, then rotate
-const BG_CACHE_KEY = 'vat_bg_cache'; // localStorage: last shown wallpaper URL
+// Video background: mp4/webm files uploaded manually to the R2 bucket (same
+// bucket the wallpapers lived in — `wrangler r2 object put`). One video is
+// picked deterministically per day. Desktop + decent connection only — mobile
+// and slow connections keep the lightweight wallpaper.
+const VIDEO_BG = true;
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
 // on every visit until this moment, then never appears again. Bump this date to
@@ -60,13 +53,12 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   const [lbMode, setLbMode] = useState('all'); // 'all' | mode key (micro, wide, …)
   const [lbModeOpen, setLbModeOpen] = useState(false); // mode dropdown open?
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
+  const [headerRank, setHeaderRank] = useState(null); // { rank, score } for the header profile card
   const [donations, setDonations] = useState([]); // recent Saweria supporters
-  // Start from the last wallpaper we showed (cached) so reloads paint it
-  // instantly — no flash of the bundled Jett image before the swap.
-  const [bgUrl, setBgUrl] = useState(() => {
-    if (typeof window === 'undefined') return BG_URL;
-    try { return localStorage.getItem(BG_CACHE_KEY) || BG_URL; } catch { return BG_URL; }
-  });
+  // R2-hosted video background (desktop only). Fades in over the wallpaper
+  // once it's actually playing; null = image background only.
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [videoReady, setVideoReady] = useState(false);
   // Landing announcement banner: shows until NOTICE_EXPIRY, then auto-hides for
   // everyone. Clicking ✕ dismisses it for good on this device — we remember the
   // dismissed banner by its expiry, so a future announcement (new NOTICE_EXPIRY)
@@ -317,35 +309,37 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   // Recent supporters for the right-side card (empty array hides the card).
   useEffect(() => { fetchDonations().then(setDonations); }, []);
 
-  // "Wallpaper of the day": pick one R2 wallpaper deterministically per
-  // ROTATE_WINDOW_DAYS window, so every reload within the window shows the same
-  // image (stable, no flicker) and it rotates on its own when the window rolls
-  // over. The choice is preloaded before swapping (no half-loaded flash) and
-  // cached so the next reload paints it immediately. Falls back to the bundled
-  // Jett image if R2 is empty/unreachable.
+  // Player's global standing for the header profile card. Cached so the
+  // leaderboard / share panels can reuse it without a second network call.
   useEffect(() => {
-    if (!ROTATE_BG) return;
-    let alive = true;
-    fetchBackgrounds().then((imgs) => {
-      if (!alive || !imgs.length) return;
-      // imgs come back sorted by the worker. Anchor on ROTATE_START_KEY so the
-      // current window shows that wallpaper, then step forward one per window.
-      const startIdx = Math.max(0, imgs.findIndex((u) => u.includes(ROTATE_START_KEY)));
-      const windowsElapsed = Math.floor((Date.now() - ROTATE_ANCHOR) / (ROTATE_WINDOW_DAYS * 86400000));
-      const idx = (((startIdx + windowsElapsed) % imgs.length) + imgs.length) % imgs.length;
-      const chosen = imgs[idx];
-      if (chosen === bgUrl) return; // already showing this window's pick — no swap needed
-      // Preload before swapping so there's no flash of a half-loaded image.
-      const pre = new Image();
-      pre.onload = () => {
-        if (!alive) return;
-        setBgUrl(chosen);
-        try { localStorage.setItem(BG_CACHE_KEY, chosen); } catch { /* ignore */ }
-      };
-      pre.src = chosen;
+    if (!deviceId) return;
+    fetchRank(deviceId).then((info) => {
+      if (!info) return;
+      setHeaderRank(info);
+      rankCacheRef.current = { data: info, ts: Date.now() };
     });
-    return () => { alive = false; };
-  }, []);
+  }, [deviceId]);
+
+  // "Video of the day": list the manually-uploaded videos in the R2 bucket and
+  // pick one deterministically per day. Deferred past first paint, and skipped
+  // entirely on mobile, data-saver, or slow connections — those keep the
+  // lightweight static wallpaper.
+  useEffect(() => {
+    if (!VIDEO_BG || isMobile) return;
+    const conn = navigator.connection;
+    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      fetchBackgrounds().then((files) => {
+        const vids = files.filter((u) => /\.(mp4|webm)(\?|$)/i.test(u));
+        if (!alive || !vids.length) return;
+        const idx = Math.floor(Date.now() / 86400000) % vids.length;
+        setVideoUrl(vids[idx]);
+      });
+    }, 1200);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [isMobile]);
+
   const formatRp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`;
 
   return (
@@ -382,13 +376,30 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         style={{
           // Oversized by 12% on each side so the translate never reveals a gap.
           inset: '-8%',
-          backgroundImage: `url('${bgUrl}')`,
+          backgroundImage: `url('${BG_URL}')`,
           backgroundSize: 'cover',
-          transition: 'background-image 0.4s ease',
           backgroundPosition: 'center right',
           willChange: 'transform',
         }}
-      />
+      >
+        {/* Background video (manually uploaded to R2), fading in over the
+            wallpaper once it actually plays. Lives inside the parallax layer so
+            it shifts with the mouse just like the image. */}
+        {videoUrl && (
+          <video
+            src={videoUrl}
+            autoPlay
+            muted
+            loop
+            playsInline
+            onPlaying={() => setVideoReady(true)}
+            onError={() => { setVideoUrl(null); setVideoReady(false); }}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
+              videoReady ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        )}
+      </div>
 
       {/* ---- Fixed gradient overlay — stays perfectly still ---- */}
       <div
@@ -396,8 +407,12 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: [
-            'linear-gradient(90deg, rgba(15,20,25,0.96) 0%, rgba(15,20,25,0.72) 26%, rgba(15,20,25,0.22) 58%, rgba(15,20,25,0.55) 100%)',
-            'radial-gradient(70% 90% at 50% 100%, rgba(15,20,25,0.6), transparent 60%)',
+            // Strong side vignette — both left & right edges are darkened hard,
+            // the centre stays bright, so the wallpaper never shows full colour
+            // at the sides (matches the reference).
+            'linear-gradient(90deg, rgba(15,20,25,0.99) 0%, rgba(15,20,25,0.85) 12%, rgba(15,20,25,0.35) 26%, rgba(15,20,25,0) 44%, rgba(15,20,25,0) 56%, rgba(15,20,25,0.35) 74%, rgba(15,20,25,0.85) 88%, rgba(15,20,25,0.99) 100%)',
+            // Top & bottom edge darkening for a full frame vignette.
+            'linear-gradient(180deg, rgba(15,20,25,0.8) 0%, rgba(15,20,25,0) 28%, rgba(15,20,25,0) 64%, rgba(15,20,25,0.85) 100%)',
           ].join(', '),
         }}
       />
@@ -405,7 +420,9 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       {/* Wind effect */}
       <WindFX />
       {/* ---------- Top bar ---------- */}
-      <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between gap-3 px-5 py-4 md:px-8 md:py-5">
+      {/* Horizontal padding matches the left menu column (left-6 / md:left-12)
+          so the logo lines up exactly with PLAY & the menu items below it. */}
+      <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between gap-3 px-6 py-4 md:px-12 md:py-5">
         <div className="flex min-w-0 items-center gap-2.5 md:gap-3">
           <img
             src="/img/app-icon.png"
@@ -419,45 +436,16 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5 rounded-2xl border border-white/10 bg-black/30 p-1.5 pr-4 backdrop-blur-sm md:gap-3 md:pr-5">
-          {valorantProfile?.card ? (
-            <img
-              src={valorantProfile.card}
-              alt=""
-              className="h-9 w-9 shrink-0 rounded-xl object-cover ring-1 ring-white/15 md:h-10 md:w-10"
-            />
-          ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-black text-slate-300 ring-1 ring-white/15 md:h-10 md:w-10">
-              {(name || 'A').charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className="min-w-0 text-left leading-tight">
-            {profileLoading ? (
-              <>
-                <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
-                <div className="mt-1.5 h-2.5 w-14 animate-pulse rounded bg-white/10" />
-              </>
-            ) : (
-              <>
-                <p
-                  className={`truncate max-w-[120px] text-sm font-black tracking-wide md:max-w-[160px] md:text-base ${
-                    name === 'Agent' ? 'text-slate-500' : 'text-white'
-                  }`}
-                >
-                  {name}
-                </p>
-                <p className="mt-0.5 flex items-baseline gap-1 whitespace-nowrap">
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500 md:text-[10px]">
-                    {t.bestScoreLabel}
-                  </span>
-                  <span className="text-xs font-black tabular-nums text-val-accent md:text-sm">
-                    {best.score.toLocaleString()}
-                  </span>
-                </p>
-              </>
-            )}
-          </div>
-        </div>
+        <ProfileCard
+          t={t}
+          name={name}
+          best={best}
+          valorantProfile={valorantProfile}
+          headerRank={headerRank}
+          profileLoading={profileLoading}
+          onOpenProfile={() => setPanel('profile')}
+          onOpenSettings={() => setPanel('settings')}
+        />
       </header>
 
       {/* ---------- Announcement banner ---------- */}
@@ -478,24 +466,26 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       )}
 
       {/* ---------- Left menu ---------- */}
-      <nav className="absolute left-6 md:left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-3">
+      <nav className="absolute left-6 md:left-12 top-1/2 z-10 flex w-60 -translate-y-1/2 flex-col gap-1.5 md:w-64">
+        {/* PLAY — highlighted card with accent border/glow. */}
         <button
           onClick={isMobile ? () => setShowMobileModal(true) : onPlay}
-          className="group flex items-center gap-3 text-left"
+          className="group flex items-center gap-4 rounded-2xl border border-val-accent/50 bg-black/40 px-5 py-4 text-left shadow-[0_0_22px_rgba(0,229,192,0.22)] backdrop-blur-sm transition-all hover:border-val-accent/80 hover:bg-black/50 hover:shadow-[0_0_30px_rgba(0,229,192,0.35)]"
         >
-          <span className="h-8 md:h-10 w-1 bg-val-red transition-all group-hover:h-10 md:group-hover:h-12" />
-          <span className="text-5xl md:text-6xl font-black uppercase tracking-wider text-val-red drop-shadow-[0_2px_10px_rgba(255,70,85,0.5)] transition-transform group-hover:translate-x-1">
+          <PlayIcon className="h-6 w-6 shrink-0 text-val-accent transition-transform group-hover:scale-110" />
+          <span className="text-3xl font-black uppercase tracking-wider text-val-accent drop-shadow-[0_2px_10px_rgba(0,229,192,0.4)]">
             {t.play}
           </span>
         </button>
 
-        {onShop && <MenuItem label={t.shop || 'Cek Toko'} onClick={onShop} />}
-        <MenuItem label={t.leaderboard} onClick={() => setPanel('leaderboard')} />
-        <MenuItem label={t.profile} onClick={() => setPanel('profile')} />
-        <MenuItem label={t.settings} onClick={() => setPanel('settings')} />
-        <MenuItem label={t.credits} onClick={() => setPanel('credits')} />
+        {onShop && <MenuItem icon={<StoreIcon />} label={t.shop || 'Cek Toko'} onClick={onShop} />}
+        <MenuItem icon={<LeaderboardIcon />} label={t.leaderboard} onClick={() => setPanel('leaderboard')} />
+        <MenuItem icon={<ProfileIcon />} label={t.profile} onClick={() => setPanel('profile')} />
+        <MenuItem icon={<SettingsIcon />} label={t.settings} onClick={() => setPanel('settings')} />
+        <MenuItem icon={<CreditsIcon />} label={t.credits} onClick={() => setPanel('credits')} />
         <MenuItem
-          label={<><span className="animate-wave">👋</span> {t.support}</>}
+          icon={<span className="animate-wave text-lg leading-none">👋</span>}
+          label={t.support}
           onClick={() => setPanel('support')}
         />
       </nav>
@@ -517,21 +507,11 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         </aside>
       )}
 
-      {/* ---------- Footer + background credit ----------
-           Stacks vertically on mobile (no overlap), splits left/right on desktop.
-           Every wallpaper, incl. the Jett one, is Zhranx15's work. */}
-      <div className="absolute bottom-3 left-5 right-5 z-10 flex flex-col gap-1 md:bottom-4 md:left-8 md:flex-row md:items-end md:justify-between md:gap-4">
+      {/* ---------- Footer ---------- */}
+      <div className="absolute bottom-3 left-5 right-5 z-10 md:bottom-4 md:left-8">
         <p className="text-[9px] md:text-[10px] tracking-widest text-slate-500 leading-normal md:max-w-[70%]">
           {t.footerText}
         </p>
-        <a
-          href="https://alphacoders.com/users/profile/235636/Zhranx15"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 text-[8px] md:text-[9px] tracking-widest text-slate-500/70 transition-colors hover:text-slate-300"
-        >
-          Background by Zhranx15
-        </a>
       </div>
 
       {/* ---------- Panels ---------- */}
@@ -978,14 +958,270 @@ function WindFX() {
   );
 }
 
-function MenuItem({ label, onClick }) {
+function MenuItem({ icon, label, onClick }) {
   return (
-    <button onClick={onClick} className="group flex items-center gap-3 text-left">
-      <span className="h-4 md:h-5 w-1 bg-transparent transition-all group-hover:bg-white" />
-      <span className="text-xl md:text-2xl font-black uppercase tracking-wider text-slate-300 transition-all group-hover:translate-x-1 group-hover:text-white">
+    <button
+      onClick={onClick}
+      className="group flex items-center gap-4 rounded-2xl border border-transparent px-5 py-3 text-left transition-all hover:border-white/10 hover:bg-white/5"
+    >
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-slate-400 transition-colors group-hover:text-white">
+        {icon}
+      </span>
+      <span className="text-lg md:text-xl font-black uppercase tracking-wider text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-white">
         {label}
       </span>
     </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Menu icons — thin outline set (except PLAY, which is filled) to match the
+ * left-nav mockup. Each takes className so the row can size/color it.
+ * ------------------------------------------------------------------------- */
+function PlayIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M7 4.5v15a1 1 0 0 0 1.53.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5z" />
+    </svg>
+  );
+}
+
+function StoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <path d="M6 8h12l-1 12H7L6 8z" />
+      <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
+    </svg>
+  );
+}
+
+function LeaderboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <path d="M12 21s6.5-5.2 6.5-10.5a6.5 6.5 0 0 0-13 0C5.5 15.8 12 21 12 21z" />
+      <circle cx="12" cy="10.5" r="2.4" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 13c.04-.32.06-.65.06-1s-.02-.68-.06-1l2-1.55-2-3.46-2.36 1a7.3 7.3 0 0 0-1.72-1L15 2.5h-4l-.32 2.53a7.3 7.3 0 0 0-1.72 1l-2.36-1-2 3.46L4.6 11c-.04.32-.06.65-.06 1s.02.68.06 1l-2 1.55 2 3.46 2.36-1c.52.42 1.1.76 1.72 1L11 21.5h4l.32-2.53a7.3 7.3 0 0 0 1.72-1l2.36 1 2-3.46L19.4 13z" />
+    </svg>
+  );
+}
+
+function CreditsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M9 8h6M9 12h6M9 16h4" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+  );
+}
+
+function HexBadgeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-full w-full" aria-hidden="true">
+      <path d="M12 2.5l8 4.5v9l-8 4.5-8-4.5v-9l8-4.5z" stroke="#00e5c0" strokeWidth="1.4" strokeLinejoin="round" fill="rgba(0,229,192,0.08)" />
+      <path d="M12 8l3 4-3 4-3-4 3-4z" fill="#00e5c0" fillOpacity="0.85" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-full w-full" aria-hidden="true">
+      <circle cx="12" cy="12" r="7.5" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function CrosshairIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-full w-full" aria-hidden="true">
+      <circle cx="12" cy="12" r="6.5" />
+      <path d="M12 5.5V9M12 15v3.5M5.5 12H9M15 12h3.5" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-full w-full" aria-hidden="true">
+      <circle cx="12" cy="12" r="7.5" />
+      <path d="M12 8v4.5l2.8 1.6" />
+    </svg>
+  );
+}
+
+function RankBarsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-full w-full" aria-hidden="true">
+      <path d="M6 20v-6M12 20V8M18 20v-9" />
+    </svg>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Header profile card (top-right). Mirrors the reference mockup: avatar +
+ * name + subtitle, notification/settings actions, a level/XP row with a rank
+ * emblem, and two stat cells (best score, global rank). Level is derived from
+ * the best score (1 level per 1,000 pts) so the bar reflects real progress.
+ * ------------------------------------------------------------------------- */
+function ProfileCard({ t, name, best, valorantProfile, headerRank, profileLoading, onOpenProfile, onOpenSettings }) {
+  const score = best?.score || 0;
+  const rank = headerRank?.rank ?? null;
+
+  // Collapsed by default: only the avatar chip shows in the header. Clicking
+  // it drops down the full card; clicking anywhere outside closes it again.
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const avatar = valorantProfile?.card ? (
+    <img src={valorantProfile.card} alt="" className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/15" />
+  ) : (
+    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-base font-black text-slate-300 ring-1 ring-white/15">
+      {(name || 'A').charAt(0).toUpperCase()}
+    </div>
+  );
+
+  return (
+    <div ref={wrapRef} className="relative shrink-0">
+      {/* Avatar chip — the only thing visible until clicked. */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label={t.profile}
+        aria-expanded={open}
+        className={`relative block rounded-2xl border p-1.5 backdrop-blur-md transition-all ${
+          open
+            ? 'border-val-accent/40 bg-black/60'
+            : 'border-white/10 bg-black/40 hover:border-white/20 hover:bg-black/55'
+        }`}
+      >
+        {avatar}
+        <span className="absolute bottom-1 right-1 h-3 w-3 rounded-full border-2 border-[#0f1419] bg-val-accent" />
+      </button>
+
+      {/* Dropdown: the full profile card. */}
+      {open && (
+        <div className="absolute right-0 top-full z-40 mt-2 flex w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-2xl border border-white/10 bg-black/70 p-4 shadow-2xl backdrop-blur-xl md:w-[380px]">
+      {/* Top row: avatar + identity + actions */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => { setOpen(false); onOpenProfile(); }} className="relative shrink-0" aria-label={t.profile}>
+          {valorantProfile?.card ? (
+            <img src={valorantProfile.card} alt="" className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/15" />
+          ) : (
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-lg font-black text-slate-300 ring-1 ring-white/15">
+              {(name || 'A').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0f1419] bg-val-accent" />
+        </button>
+        <div className="min-w-0 flex-1 leading-tight">
+          <p className={`truncate text-base font-black tracking-wide ${name === 'Agent' ? 'text-slate-500' : 'text-white'}`}>
+            {name}
+          </p>
+          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+            {t.subtitle.toUpperCase()}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400">
+            <span className="h-[17px] w-[17px]"><BellIcon /></span>
+          </span>
+          <button
+            onClick={() => { setOpen(false); onOpenSettings(); }}
+            aria-label={t.settings}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <span className="h-[17px] w-[17px]"><SettingsIcon /></span>
+          </button>
+        </div>
+      </div>
+
+      {/* Valorant identity row — only real data from the profile row: shown
+          when a Valorant account is linked (level + competitive rank). */}
+      {valorantProfile?.displayName && (
+        <div className="flex items-center gap-3 rounded-xl border border-val-accent/20 bg-val-accent/5 px-3 py-2.5">
+          <div className="min-w-0 flex-1 leading-tight">
+            {valorantProfile.level != null && (
+              <p className="text-[11px] font-black uppercase tracking-[0.15em] text-val-accent">
+                {t.levelLabel} <span className="text-white">{valorantProfile.level}</span>
+              </p>
+            )}
+            <p
+              className="mt-0.5 truncate text-[11px] font-bold uppercase tracking-wider"
+              style={valorantProfile.rank?.color ? { color: valorantProfile.rank.color } : { color: '#94a3b8' }}
+            >
+              {valorantProfile.rank?.name || 'Unranked'}
+            </p>
+          </div>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-val-accent/20 bg-val-accent/5">
+            {valorantProfile.rank?.icon ? (
+              <img src={valorantProfile.rank.icon} alt="" className="h-8 w-8 object-contain" />
+            ) : (
+              <span className="h-7 w-7"><HexBadgeIcon /></span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Stats — mirrors the profiles table: score, accuracy, split + the
+          weekly standing computed from the scores table. */}
+      <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
+        <StatCell icon={<TargetIcon />} label={t.bestScoreLabel} value={profileLoading ? '—' : score.toLocaleString()} />
+        <StatCell icon={<RankBarsIcon />} label={t.globalRank} value={rank ? `#${rank.toLocaleString()}` : '—'} />
+        <StatCell icon={<CrosshairIcon />} label={t.bestAcc} value={profileLoading ? '—' : `${best?.accuracy ? best.accuracy.toFixed(0) : 0}%`} />
+        <StatCell icon={<ClockIcon />} label={t.bestSplit} value={profileLoading ? '—' : `${best?.split ? Math.round(best.split) : 0}ms`} />
+      </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCell({ icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-val-accent">
+        <span className="h-[18px] w-[18px]">{icon}</span>
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{label}</p>
+        <p className="truncate text-base font-black tabular-nums text-val-accent">{value}</p>
+      </div>
+    </div>
   );
 }
 

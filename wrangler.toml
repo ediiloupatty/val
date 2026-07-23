@@ -10,8 +10,9 @@ binding = "DB"
 database_name = "valorant-aim-trainer-db"
 database_id = "74acbd75-c434-456d-b00b-ada342384887"
 
-# R2 bucket holding the rotating landing-page background images. Add images with:
-#   npx wrangler r2 object put aimku-backgrounds/<name>.webp --file=<path> --remote
+# R2 bucket holding the landing-page background videos (mp4/webm, rotated one
+# per day by the client). Upload with:
+#   npx wrangler r2 object put aimku-backgrounds/<name>.mp4 --file=<path> --content-type=video/mp4 --remote
 [[r2_buckets]]
 binding = "BG_BUCKET"
 bucket_name = "aimku-backgrounds"
