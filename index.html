@@ -32,24 +32,13 @@
     <meta name="twitter:image" content="https://aimku.xyz/img/jett-background.webp" />
 
     <!-- Asset preloading for critical resources -->
-    <!-- Smart background preload: returning visitors render their cached R2 wallpaper,
-         first-timers render the bundled Jett fallback. Preload whichever will actually
-         paint so we never waste a fetch (and never trip the "preloaded but unused" warning). -->
+    <!-- The landing background is now the static Jett poster (videos stream from
+         R2 after first paint), so preload that. Also drop the stale cache key
+         left behind by the old rotating-wallpaper system. -->
     <script>
-      (function () {
-        try {
-          var bg = localStorage.getItem('vat_bg_cache') || '/img/jett-background.webp';
-          var l = document.createElement('link');
-          l.rel = 'preload';
-          l.as = 'image';
-          l.href = bg;
-          if (bg.endsWith('.webp')) l.type = 'image/webp';
-          document.head.appendChild(l);
-        } catch (e) {
-          /* localStorage blocked — skip preload, app still loads its background normally */
-        }
-      })();
+      try { localStorage.removeItem('vat_bg_cache'); } catch (e) { /* ignore */ }
     </script>
+    <link rel="preload" href="/img/jett-background.webp" as="image" type="image/webp" />
     <link rel="preload" href="/img/app-icon.png" as="image" type="image/png" />
     <link rel="prefetch" href="/models/colt_navy_1851.glb" as="fetch" crossorigin="anonymous" />
     <link rel="preconnect" href="https://fonts.googleapis.com">

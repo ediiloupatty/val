@@ -76,13 +76,18 @@ export async function fetchProfile(deviceId) {
 export async function saveProfile(deviceId, name, best) {
   if (!deviceId) return { ok: false };
   // The server rejects the whole save if any best stat isn't a finite number
-  // (e.g. a partial cached profile with a missing `split`). Normalise so that
-  // saving a name never fails on an incomplete best.
-  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  // or falls outside its validation bounds (legacy profiles can hold values
+  // stored before those bounds existed). Normalise AND clamp so that saving a
+  // name never 400s on old data.
+  const num = (v, max) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(Math.max(0, n), max);
+  };
   const safeBest = {
-    score: num(best?.score),
-    accuracy: num(best?.accuracy),
-    split: num(best?.split),
+    score: Math.round(num(best?.score, 100000)),
+    accuracy: num(best?.accuracy, 100),
+    split: num(best?.split, 60000),
   };
   // One retry after a short pause — a single dropped request or slow-network
   // timeout shouldn't surface an error toast for such a small payload.
@@ -96,7 +101,9 @@ export async function saveProfile(deviceId, name, best) {
         body: JSON.stringify({ deviceId, name, best: safeBest }),
       });
       if (res.ok) return { ok: true };
-      console.warn('[API] Worker responded with status:', res.status);
+      // Surface the server's reason — a bare status makes 400s undiagnosable.
+      const errBody = await res.text().catch(() => '');
+      console.warn('[API] Profile save rejected:', res.status, errBody);
       // 4xx = the payload itself was rejected — retrying won't change that.
       if (res.status < 500) return { ok: false };
     } catch (err) {
