@@ -591,6 +591,19 @@ function SkinTile({ skin, t }) {
 function InventoryView({ inventory, t }) {
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
+  // The sidebar duplicates the category tabs, so it stays hidden until the
+  // user has scrolled deep into the grid — then it appears (sticky) as a
+  // quick-nav / summary. Listens on the hub's scroll container.
+  const rootRef = useRef(null);
+  const [showSidebar, setShowSidebar] = useState(false);
+  useEffect(() => {
+    const scroller = rootRef.current?.closest('.overflow-y-auto');
+    if (!scroller) return;
+    const onScroll = () => setShowSidebar(scroller.scrollTop > 700);
+    onScroll();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, []);
   const skins = useMemo(
     () => inventory.skins.map((s) => ({ ...s, cat: weaponCategory(s.name) })),
     [inventory.skins]
@@ -607,7 +620,7 @@ function InventoryView({ inventory, t }) {
       (!q || s.name.toLowerCase().includes(q.toLowerCase()))
   );
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={rootRef} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-black uppercase tracking-wide sm:text-2xl">{t.tabs.inventory}</h2>
         <input
@@ -635,8 +648,11 @@ function InventoryView({ inventory, t }) {
       </div>
 
       <div className="flex items-start gap-4">
-        {/* Sidebar: totals per category */}
-        <aside className="hidden w-44 shrink-0 flex-col gap-3 rounded-2xl border border-white/10 bg-val-panel p-4 lg:flex">
+        {/* Sidebar: totals per category — only after scrolling deep into the
+            grid (the tabs above already cover filtering near the top). Sticky
+            so it's visible right where the user is. */}
+        {showSidebar && (
+        <aside className="sticky top-20 hidden w-44 shrink-0 flex-col gap-3 rounded-2xl border border-white/10 bg-val-panel p-4 lg:flex">
           <div>
             <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.statSkins}</p>
             <p className="mt-1 border-l-2 border-val-red pl-2 text-2xl font-black tabular-nums text-white">
@@ -665,6 +681,7 @@ function InventoryView({ inventory, t }) {
             </p>
           </div>
         </aside>
+        )}
 
         {/* Grid */}
         <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
