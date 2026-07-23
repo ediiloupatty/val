@@ -76,7 +76,6 @@ const C = ({ children }) => (
   <code className="break-all rounded bg-white/10 px-1 py-0.5 text-xs">{children}</code>
 );
 const B = ({ children }) => <b className="text-white">{children}</b>;
-const Hi = ({ children }) => <b className="text-slate-300">{children}</b>;
 
 // All hub UI strings, both languages. Kept here rather than translations.js so
 // the text stays code-split with this lazy-loaded page. Values may be strings,
@@ -133,24 +132,20 @@ const HUB_TEXT = {
     nightEndsIn: 'Berakhir dalam',
     featuredBundle: 'Bundle Aktif',
     bundleItems: (n) => `${n} item`,
-    heroTitle: 'Estimasi Total VP Skin',
-    heroNote: (priced, owned) => (
-      <>
-        Estimasi dari <Hi>{priced} skin berharga</Hi> yang kamu miliki (total {owned} skin unik).
-        Dihitung dari harga standar per content tier (Select/Deluxe/Premium/Exclusive/Ultra),{' '}
-        <Hi>bukan</Hi> uang asli yang dikeluarkan. Skin gratis/battlepass/default tidak dihitung.
-      </>
-    ),
+    heroTitle: 'Nilai Koleksi Skin',
+    heroNote: (priced, owned) =>
+      `${priced} skin berharga · ${owned} skin unik. Harga standar per content tier — bukan uang asli. Skin gratis/battlepass tidak dihitung.`,
     invUnavailable: 'Data inventory tidak tersedia (mungkin timeout dari Riot). Coba buka lagi menu ini.',
-    spendTitle: 'Estimasi Total Pengeluaran',
-    spendSkins: (vpStr) => `Skin premium (${vpStr} VP)`,
-    spendBp: (n, cost) => `Battlepass (${n} × ${cost} VP)`,
-    spendNote: `Konversi memakai harga resmi paket 1000 VP (sekitar Rp${IDR_PER_VP.toLocaleString('id-ID')} per VP; paket besar bisa lebih murah, kisaran Rp100 sampai Rp118 per VP). Battlepass dihitung dari act yang skin jalur berbayarnya kamu miliki. Skin hadiah/diskon Night Market membuat pengeluaran asli bisa lebih rendah. Ini estimasi, bukan tagihan. 😄`,
-    resaleTitle: 'Estimasi Harga Jual Akun',
-    resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
-    resaleNote: 'Kalibrasi dari listing nyata pasar akun Indonesia (itemku): akun 170-an skin laku sekitar Rp4,3jt, 82 skin sekitar Rp2,75jt, kira-kira 10 sampai 20% dari estimasi pengeluaran. Rank tinggi menaikkan harga (Immortal sekitar 1,5x, Radiant 2x). Skin langka (Champions, bundle lawas) bisa di atas rentang ini.',
-    resaleWarning: '⚠️ Sekadar info pasar: jual-beli akun melanggar Terms of Service Riot dan berisiko banned permanen.',
-    resaleLimitedLine: (names, lo, hi) => `✨ Skin limited terdeteksi: ${names}. Premium pasar +${lo} sampai ${hi} sudah ditambahkan ke rentang (kalibrasi listing PlayerAuctions/zeusX).`,
+    spendTitle: 'Estimasi Pengeluaran',
+    spendSkins: (vpStr) => `Skin premium · ${vpStr} VP`,
+    spendBp: (n, cost) => `Battlepass · ${n} × ${cost} VP`,
+    spendNote: `Kurs resmi paket 1000 VP ≈ Rp${IDR_PER_VP.toLocaleString('id-ID')}/VP. Battlepass dihitung dari act yang skin berbayarnya kamu miliki. Hadiah & diskon Night Market bisa membuat pengeluaran asli lebih rendah.`,
+    resaleTitle: 'Estimasi Harga Jual',
+    resaleRankLine: (rank, mult) => `${rank} · ${mult}×`,
+    resaleNote: 'Kalibrasi listing pasar akun (itemku): sekitar 10–20% dari estimasi pengeluaran. Rank tinggi & skin langka menaikkan harga.',
+    resaleWarning: '⚠️ Info pasar saja — jual-beli akun melanggar ToS Riot, risiko banned permanen.',
+    resaleLimitedLine: (names, lo, hi) => `Limited: ${names} — premium pasar +${lo} s/d ${hi} sudah termasuk.`,
+    walletTitle: 'Dompet',
     badgeLimited: 'Limited',
     bpMissing: 'Tidak terdeteksi (mungkin belum punya battlepass aktif).',
     collectionTitle: 'Koleksi Akun',
@@ -228,24 +223,20 @@ const HUB_TEXT = {
     nightEndsIn: 'Ends in',
     featuredBundle: 'Featured Bundle',
     bundleItems: (n) => `${n} items`,
-    heroTitle: 'Estimated Total Skin VP',
-    heroNote: (priced, owned) => (
-      <>
-        Estimated from <Hi>{priced} priced skins</Hi> you own ({owned} unique skins total). Based on
-        standard prices per content tier (Select/Deluxe/Premium/Exclusive/Ultra), <Hi>not</Hi> real
-        money spent. Free/battlepass/default skins aren't counted.
-      </>
-    ),
+    heroTitle: 'Skin Collection Value',
+    heroNote: (priced, owned) =>
+      `${priced} priced skins · ${owned} unique skins. Standard price per content tier — not real money spent. Free/battlepass skins excluded.`,
     invUnavailable: 'Inventory data unavailable (possibly a Riot timeout). Try opening this menu again.',
-    spendTitle: 'Estimated Total Spend',
-    spendSkins: (vpStr) => `Premium skins (${vpStr} VP)`,
-    spendBp: (n, cost) => `Battlepass (${n} × ${cost} VP)`,
-    spendNote: `Converted using the official 1000-VP pack price (about Rp${IDR_PER_VP.toLocaleString('id-ID')} per VP; bigger packs are cheaper, around Rp100 to Rp118 per VP). Battlepasses are counted from acts whose paid-track skins you own. Gifted skins and Night Market discounts can make real spend lower. This is an estimate, not a bill. 😄`,
-    resaleTitle: 'Estimated Account Resale Value',
-    resaleRankLine: (rank, mult) => `Rank ${rank} · multiplier ${mult}×`,
-    resaleNote: "Calibrated against real listings on Indonesia's account marketplace (itemku): around 170 skins sells for about Rp4.3M, 82 skins about Rp2.75M, roughly 10 to 20% of estimated spend. High ranks raise the price (Immortal about 1.5x, Radiant 2x). Rare skins (Champions, old bundles) can go above this range.",
-    resaleWarning: "⚠️ Market info only: buying or selling accounts violates Riot's Terms of Service and risks a permanent ban.",
-    resaleLimitedLine: (names, lo, hi) => `✨ Limited skins detected: ${names}. A market premium of +${lo} to ${hi} is already added to the range (calibrated from PlayerAuctions/zeusX listings).`,
+    spendTitle: 'Estimated Spend',
+    spendSkins: (vpStr) => `Premium skins · ${vpStr} VP`,
+    spendBp: (n, cost) => `Battlepass · ${n} × ${cost} VP`,
+    spendNote: `Official 1000-VP pack rate ≈ Rp${IDR_PER_VP.toLocaleString('id-ID')}/VP. Battlepasses counted from acts whose paid-track skins you own. Gifts & Night Market discounts can make real spend lower.`,
+    resaleTitle: 'Estimated Resale Value',
+    resaleRankLine: (rank, mult) => `${rank} · ${mult}×`,
+    resaleNote: 'Calibrated against real account-market listings (itemku): roughly 10–20% of estimated spend. High ranks & rare skins raise the price.',
+    resaleWarning: '⚠️ Market info only — account trading violates Riot ToS and risks a permanent ban.',
+    resaleLimitedLine: (names, lo, hi) => `Limited: ${names} — market premium +${lo} to ${hi} included.`,
+    walletTitle: 'Wallet',
     badgeLimited: 'Limited',
     bpMissing: "Not detected (you may not have an active battlepass).",
     collectionTitle: 'Account Collection',
@@ -331,12 +322,25 @@ function fmtDH(s, hourSuffix = 'h') {
   return formatCountdown(v, hourSuffix);
 }
 
-// Dashboard stat card: quiet label over a bold value, no iconography.
+// Valorant-style section label: red double-slash marker + tracked uppercase.
+function SectionLabel({ children, color = 'text-slate-400' }) {
+  return (
+    <p className={`text-[10px] font-black uppercase tracking-[0.25em] ${color}`}>
+      <span className="mr-1.5 text-val-red">{'//'}</span>
+      {children}
+    </p>
+  );
+}
+
+// Dashboard stat card: slash-marked label over a bold value, no iconography.
 function DashStat({ label, value, accent }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-val-panel p-3.5 sm:p-4">
-      <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{label}</p>
-      <p className={`mt-1 truncate text-lg font-black tabular-nums sm:text-xl ${accent ? 'text-val-accent' : 'text-white'}`}>
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">
+        <span className="mr-1.5 text-val-red">{'//'}</span>
+        {label}
+      </p>
+      <p className={`mt-1.5 truncate text-xl font-black tabular-nums sm:text-2xl ${accent ? 'text-val-accent' : 'text-white'}`}>
         {value}
       </p>
     </div>
@@ -353,19 +357,17 @@ function AccountStat({ label, value }) {
   );
 }
 
-// One wallet balance: icon, label, amount — laid out cleanly.
-function WalletCard({ icon, label, value, accent }) {
+// One wallet balance row: icon, label, amount — stacked inside the wallet panel.
+function WalletRow({ icon, label, value, accent }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
+    <div className="flex items-center gap-2.5 py-2.5">
       {icon ? (
-        <img src={icon} alt="" className="h-7 w-7 shrink-0" />
+        <img src={icon} alt="" className="h-5 w-5 shrink-0" />
       ) : (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-black text-slate-300">KC</div>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-black text-slate-300">KC</span>
       )}
-      <div className="min-w-0">
-        <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-        <p className={`truncate text-base font-black tabular-nums sm:text-lg ${accent ? 'text-val-accent' : 'text-white'}`}>{value}</p>
-      </div>
+      <p className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`shrink-0 text-sm font-black tabular-nums ${accent ? 'text-val-accent' : 'text-white'}`}>{value}</p>
     </div>
   );
 }
@@ -979,20 +981,47 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                 {overviewError && <p className="text-sm font-semibold text-val-red">{overviewError}</p>}
                 {overview && (
                   <div className="flex flex-col gap-5">
-                    {/* Welcome hero (mockup style) */}
+                    {/* Welcome hero: name left, rank + level chips right */}
                     <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-val-red/15 via-val-panel to-val-panel p-6 sm:p-8">
                       {overview.identity?.card && (
                         <img
                           src={overview.identity.card}
                           alt=""
-                          className="pointer-events-none absolute -right-4 top-1/2 h-36 w-36 -translate-y-1/2 rotate-6 rounded-2xl object-cover opacity-25 sm:h-44 sm:w-44"
+                          className="pointer-events-none absolute -right-4 top-1/2 h-36 w-36 -translate-y-1/2 rotate-6 rounded-2xl object-cover opacity-20 sm:h-44 sm:w-44"
                         />
                       )}
-                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">{t.welcomeBack}</p>
-                      <h2 className="mt-1 text-3xl font-black uppercase leading-none tracking-wide text-white sm:text-5xl">
-                        {overview.identity?.displayName?.split('#')[0] || t.playerFallback}
-                      </h2>
-                      <p className="mt-2 text-xs text-slate-400 sm:text-sm">{t.tagline}</p>
+                      <div className="relative flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+                            <span className="mr-1.5 text-val-red">{'//'}</span>
+                            {t.welcomeBack}
+                          </p>
+                          <h2 className="mt-1.5 truncate text-3xl font-black uppercase leading-none tracking-wide text-white sm:text-5xl">
+                            {overview.identity?.displayName?.split('#')[0] || t.playerFallback}
+                          </h2>
+                          <p className="mt-2 text-xs text-slate-400 sm:text-sm">{t.tagline}</p>
+                        </div>
+                        <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
+                          {overview.identity?.rank?.name && (
+                            <span className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-1.5">
+                              {overview.identity.rank.icon && (
+                                <img src={overview.identity.rank.icon} alt="" className="h-5 w-5" />
+                              )}
+                              <span
+                                className="text-[11px] font-black uppercase tracking-wider"
+                                style={overview.identity.rank.color ? { color: overview.identity.rank.color } : undefined}
+                              >
+                                {overview.identity.rank.name}
+                              </span>
+                            </span>
+                          )}
+                          {overview.identity?.level != null && (
+                            <span className="rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-300">
+                              Lv <span className="text-white">{overview.identity.level}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     {/* Quick stats row */}
@@ -1003,133 +1032,148 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                       <DashStat label={t.statLevel} value={vp(overview.account?.level)} />
                     </div>
 
-                    {/* Estimated total VP value of the skin collection (hero — the headline number) */}
-                    {overview.inventory ? (
-                      <div className="relative overflow-hidden rounded-3xl border border-val-accent/30 bg-gradient-to-br from-val-accent/20 via-val-panel to-val-panel p-5 sm:p-6">
-                        <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-val-accent/10 blur-3xl" />
-                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-val-accent">{t.heroTitle}</p>
-                        <div className="mt-2 flex items-end gap-2.5">
-                          <img src={VP_ICON} alt="VP" className="mb-1.5 h-7 w-7 shrink-0 sm:h-8 sm:w-8" />
-                          <span className="text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
-                            {vp(overview.inventory.collectionValueVp)}
-                          </span>
-                          <span className="mb-1 text-sm font-bold text-slate-400">VP</span>
-                        </div>
-                        <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">
-                          {t.heroNote(vp(overview.inventory.pricedSkinCount), vp(overview.inventory.ownedSkinCount))}
-                        </p>
-                      </div>
-                    ) : (
+                    {!overview.inventory && (
                       <div className="rounded-2xl border border-white/10 bg-val-panel p-4 text-sm text-slate-400">
                         {t.invUnavailable}
                       </div>
                     )}
 
-                    {/* Estimated real-money spend: bought skins + battlepasses, converted to IDR */}
-                    {overview.inventory && (() => {
-                      const skinVp = overview.inventory.collectionValueVp || 0;
-                      const bpCount = overview.inventory.battlepassBoughtCount || 0;
-                      const bpVp = bpCount * BATTLEPASS_COST_VP;
-                      const totalIdr = (skinVp + bpVp) * IDR_PER_VP;
-                      return (
-                        <div className="relative overflow-hidden rounded-3xl border border-val-red/30 bg-gradient-to-br from-val-red/15 via-val-panel to-val-panel p-5 sm:p-6">
-                          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-val-red/10 blur-3xl" />
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-val-red">{t.spendTitle}</p>
-                          <p className="mt-2 text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
-                            {rp(totalIdr)}
-                          </p>
-                          <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-300 sm:text-sm">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-400">{t.spendSkins(vp(skinVp))}</span>
-                              <span className="font-bold tabular-nums">{rp(skinVp * IDR_PER_VP)}</span>
+                    {/* Detail grid: estimates left (2/3) · wallet/battlepass/collection right (1/3) */}
+                    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+                      <div className="flex flex-col gap-4 lg:col-span-2">
+                        {/* Collection value */}
+                        {overview.inventory && (
+                          <div className="relative overflow-hidden rounded-2xl border border-val-accent/25 bg-gradient-to-br from-val-accent/10 via-val-panel to-val-panel p-5 sm:p-6">
+                            <SectionLabel color="text-val-accent">{t.heroTitle}</SectionLabel>
+                            <div className="mt-3 flex items-end gap-2.5">
+                              <img src={VP_ICON} alt="VP" className="mb-1 h-7 w-7 shrink-0" />
+                              <span className="text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
+                                {vp(overview.inventory.collectionValueVp)}
+                              </span>
+                              <span className="mb-0.5 text-sm font-bold text-slate-400">VP</span>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-400">{t.spendBp(vp(bpCount), vp(BATTLEPASS_COST_VP))}</span>
-                              <span className="font-bold tabular-nums">{rp(bpVp * IDR_PER_VP)}</span>
+                            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                              {t.heroNote(vp(overview.inventory.pricedSkinCount), vp(overview.inventory.ownedSkinCount))}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Spend estimate — receipt-style breakdown */}
+                        {overview.inventory && (() => {
+                          const skinVp = overview.inventory.collectionValueVp || 0;
+                          const bpCount = overview.inventory.battlepassBoughtCount || 0;
+                          const bpVp = bpCount * BATTLEPASS_COST_VP;
+                          const totalIdr = (skinVp + bpVp) * IDR_PER_VP;
+                          return (
+                            <div className="rounded-2xl border border-val-red/25 bg-gradient-to-br from-val-red/10 via-val-panel to-val-panel p-5 sm:p-6">
+                              <SectionLabel color="text-val-red">{t.spendTitle}</SectionLabel>
+                              <p className="mt-3 text-3xl font-black leading-none tabular-nums text-white sm:text-4xl">
+                                {rp(totalIdr)}
+                              </p>
+                              <div className="mt-4 divide-y divide-white/5 border-t border-white/10 text-xs sm:text-sm">
+                                <div className="flex items-center justify-between gap-3 py-2.5">
+                                  <span className="text-slate-400">{t.spendSkins(vp(skinVp))}</span>
+                                  <span className="font-bold tabular-nums text-white">{rp(skinVp * IDR_PER_VP)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3 py-2.5">
+                                  <span className="text-slate-400">{t.spendBp(vp(bpCount), vp(BATTLEPASS_COST_VP))}</span>
+                                  <span className="font-bold tabular-nums text-white">{rp(bpVp * IDR_PER_VP)}</span>
+                                </div>
+                              </div>
+                              <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{t.spendNote}</p>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Resale estimate */}
+                        {overview.inventory && (() => {
+                          const skinVp = overview.inventory.collectionValueVp || 0;
+                          const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
+                          const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
+                          const mult = rankMultiplier(overview.identity?.rank?.name);
+                          const limited = overview.inventory.limitedSkins || [];
+                          const prem = limitedPremium(limited);
+                          const low = spendIdr * RESALE_RATE_LOW * mult + prem.low;
+                          const high = spendIdr * RESALE_RATE_HIGH * mult + prem.high;
+                          if (spendIdr <= 0 && prem.high <= 0) return null;
+                          return (
+                            <div className="rounded-2xl border border-white/10 bg-val-panel p-5 sm:p-6">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <SectionLabel>{t.resaleTitle}</SectionLabel>
+                                <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-300">
+                                  {t.resaleRankLine(overview.identity?.rank?.name || '-', mult)}
+                                </span>
+                              </div>
+                              <p className="mt-3 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
+                                {rp(low)} <span className="text-base font-bold text-slate-500">—</span> {rp(high)}
+                              </p>
+                              {limited.length > 0 && (
+                                <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[11px] leading-relaxed text-amber-300">
+                                  {t.resaleLimitedLine(limited.join(', '), rp(prem.low), rp(prem.high))}
+                                </div>
+                              )}
+                              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{t.resaleNote}</p>
+                              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">{t.resaleWarning}</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="flex flex-col gap-4">
+                        {/* Wallet */}
+                        <div className="rounded-2xl border border-white/10 bg-val-panel p-5">
+                          <SectionLabel>{t.walletTitle}</SectionLabel>
+                          <div className="mt-1 divide-y divide-white/5">
+                            <WalletRow icon={VP_ICON} label="Valorant Points" value={vp(overview.wallet?.vp)} accent />
+                            <WalletRow icon={RAD_ICON} label="Radianite" value={vp(overview.wallet?.radianite)} />
+                            {overview.wallet?.kingdom != null && (
+                              <WalletRow label="Kingdom Credits" value={vp(overview.wallet.kingdom)} />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Battlepass */}
+                        <div className="rounded-2xl border border-white/10 bg-val-panel p-5">
+                          {overview.battlepass ? (
+                            <>
+                              <div className="flex items-center justify-between gap-3">
+                                <SectionLabel>{overview.battlepass.name || 'Battlepass'}</SectionLabel>
+                                <p className="shrink-0 text-sm font-black tabular-nums text-white">
+                                  {overview.battlepass.tier}
+                                  <span className="text-slate-500">/{overview.battlepass.totalLevels}</span>
+                                </p>
+                              </div>
+                              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-val-red/70 to-val-red"
+                                  style={{ width: `${Math.min(100, (overview.battlepass.tier / (overview.battlepass.totalLevels || 50)) * 100)}%` }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <SectionLabel>Battlepass</SectionLabel>
+                              <p className="mt-2 text-xs text-slate-400">{t.bpMissing}</p>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Account collection counts */}
+                        {overview.account && (
+                          <div className="rounded-2xl border border-white/10 bg-val-panel p-5">
+                            <SectionLabel>{t.collectionTitle}</SectionLabel>
+                            <div className="mt-4 grid grid-cols-3 gap-y-5">
+                              <AccountStat label="Level" value={vp(overview.account.level)} />
+                              <AccountStat label="Agent" value={vp(overview.account.agentCount)} />
+                              <AccountStat label="Card" value={vp(overview.account.cardCount)} />
+                              <AccountStat label="Spray" value={vp(overview.account.sprayCount)} />
+                              <AccountStat label="Buddy" value={vp(overview.account.buddyCount)} />
+                              <AccountStat label="Title" value={vp(overview.account.titleCount)} />
                             </div>
                           </div>
-                          <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">{t.spendNote}</p>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Estimated account resale value: 10–20% of spend × rank multiplier */}
-                    {overview.inventory && (() => {
-                      const skinVp = overview.inventory.collectionValueVp || 0;
-                      const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
-                      const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
-                      const mult = rankMultiplier(overview.identity?.rank?.name);
-                      const limited = overview.inventory.limitedSkins || [];
-                      const prem = limitedPremium(limited);
-                      const low = spendIdr * RESALE_RATE_LOW * mult + prem.low;
-                      const high = spendIdr * RESALE_RATE_HIGH * mult + prem.high;
-                      if (spendIdr <= 0 && prem.high <= 0) return null;
-                      return (
-                        <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.resaleTitle}</p>
-                          <p className="mt-2 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
-                            {rp(low)} <span className="text-base font-bold text-slate-500">-</span> {rp(high)}
-                          </p>
-                          <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            {t.resaleRankLine(overview.identity?.rank?.name || '-', mult)}
-                          </p>
-                          {limited.length > 0 && (
-                            <p className="mt-2 max-w-prose text-xs leading-relaxed text-amber-300">
-                              {t.resaleLimitedLine(limited.join(', '), rp(prem.low), rp(prem.high))}
-                            </p>
-                          )}
-                          <p className="mt-3 max-w-prose text-xs leading-relaxed text-slate-400">{t.resaleNote}</p>
-                          <p className="mt-2 max-w-prose text-[11px] leading-relaxed text-slate-500">{t.resaleWarning}</p>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Wallet */}
-                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-                      <WalletCard icon={VP_ICON} label="Valorant Points" value={vp(overview.wallet?.vp)} accent />
-                      <WalletCard icon={RAD_ICON} label="Radianite" value={vp(overview.wallet?.radianite)} />
-                      {overview.wallet?.kingdom != null && (
-                        <WalletCard label="Kingdom Credits" value={vp(overview.wallet.kingdom)} />
-                      )}
+                        )}
+                      </div>
                     </div>
-
-                    {/* Battlepass */}
-                    {overview.battlepass ? (
-                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{overview.battlepass.name || 'Battlepass'}</p>
-                          <p className="text-sm font-black text-white">
-                            Tier {overview.battlepass.tier}<span className="text-slate-500"> / {overview.battlepass.totalLevels}</span>
-                          </p>
-                        </div>
-                        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-val-accent/70 to-val-accent"
-                            style={{ width: `${Math.min(100, (overview.battlepass.tier / (overview.battlepass.totalLevels || 50)) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Battlepass</p>
-                        <p className="mt-1 text-sm text-slate-400">{t.bpMissing}</p>
-                      </div>
-                    )}
-
-                    {/* Account counts — one tidy panel instead of six loose boxes */}
-                    {overview.account && (
-                      <div className="rounded-2xl border border-white/10 bg-val-panel p-4 sm:p-5">
-                        <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.collectionTitle}</p>
-                        <div className="grid grid-cols-3 gap-y-5 sm:grid-cols-6">
-                          <AccountStat label="Level" value={vp(overview.account.level)} />
-                          <AccountStat label="Agent" value={vp(overview.account.agentCount)} />
-                          <AccountStat label="Card" value={vp(overview.account.cardCount)} />
-                          <AccountStat label="Spray" value={vp(overview.account.sprayCount)} />
-                          <AccountStat label="Buddy" value={vp(overview.account.buddyCount)} />
-                          <AccountStat label="Title" value={vp(overview.account.titleCount)} />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </>
