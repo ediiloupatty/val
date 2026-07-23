@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchShop, fetchValorantOverview, fetchValorantInventory } from './api.js';
 import { RIOT_LOGIN_URL, cleanSsid, saveSsid, loadSsid, clearSsid } from './riotSession.js';
 
@@ -119,6 +119,18 @@ const HUB_TEXT = {
     ),
     tabs: { dashboard: 'Dashboard', inventory: 'Inventory', store: 'Toko', night: 'Night Market' },
     playerFallback: 'Pemain',
+    welcomeBack: 'SELAMAT DATANG,',
+    tagline: 'Main terus, kumpulkan gayamu.',
+    statSkins: 'Total Skin',
+    statValue: 'Nilai Koleksi',
+    statAgents: 'Agent Terbuka',
+    statLevel: 'Level Akun',
+    online: 'Online',
+    searchPlaceholder: 'Cari skin…',
+    catAll: 'Semua',
+    dailyOffers: 'Penawaran Harian',
+    offersRefreshIn: 'Offer refresh dalam',
+    nightEndsIn: 'Berakhir dalam',
     heroTitle: 'Estimasi Total VP Skin',
     heroNote: (priced, owned) => (
       <>
@@ -200,6 +212,18 @@ const HUB_TEXT = {
     ),
     tabs: { dashboard: 'Dashboard', inventory: 'Inventory', store: 'Store', night: 'Night Market' },
     playerFallback: 'Player',
+    welcomeBack: 'WELCOME BACK,',
+    tagline: 'Play more, earn more, collect your style.',
+    statSkins: 'Total Skins',
+    statValue: 'Collection Value',
+    statAgents: 'Agents Unlocked',
+    statLevel: 'Account Level',
+    online: 'Online',
+    searchPlaceholder: 'Search inventory…',
+    catAll: 'All',
+    dailyOffers: 'Daily Offers',
+    offersRefreshIn: 'Offers refresh in',
+    nightEndsIn: 'Ends in',
     heroTitle: 'Estimated Total Skin VP',
     heroNote: (priced, owned) => (
       <>
@@ -257,12 +281,63 @@ function isExpiredError(msg) {
   return /kadaluarsa|expired|tidak valid/i.test(msg || '');
 }
 
-function StatCard({ label, value, sub }) {
+// Weapon category buckets for the Inventory sidebar/filter, derived from the
+// skin name (Riot skin names end with the weapon: "Prime Vandal").
+const WEAPON_CATS = [
+  ['Rifles', ['vandal', 'phantom', 'bulldog', 'guardian']],
+  ['SMG', ['spectre', 'stinger']],
+  ['Shotgun', ['judge', 'bucky']],
+  ['Sniper', ['operator', 'marshal', 'outlaw']],
+  ['Pistol', ['classic', 'ghost', 'sheriff', 'frenzy', 'shorty']],
+  ['Heavy', ['odin', 'ares']],
+];
+function weaponCategory(name) {
+  const n = (name || '').toLowerCase();
+  for (const [cat, weapons] of WEAPON_CATS) {
+    for (const w of weapons) if (n.endsWith(` ${w}`) || n === w) return cat;
+  }
+  return 'Melee';
+}
+
+// Live-ticking countdown: anchors the remaining seconds to a wall-clock target
+// once, then ticks every second.
+function useCountdown(remaining) {
+  const [left, setLeft] = useState(() => Math.max(0, Number(remaining) || 0));
+  useEffect(() => {
+    const target = Date.now() + Math.max(0, Number(remaining) || 0) * 1000;
+    setLeft(Math.max(0, Number(remaining) || 0));
+    const id = setInterval(
+      () => setLeft(Math.max(0, Math.round((target - Date.now()) / 1000))),
+      1000
+    );
+    return () => clearInterval(id);
+  }, [remaining]);
+  return left;
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+function fmtHMS(s) {
+  const v = Math.max(0, Number(s) || 0);
+  return `${pad2(Math.floor(v / 3600))}:${pad2(Math.floor((v % 3600) / 60))}:${pad2(v % 60)}`;
+}
+function fmtDH(s, hourSuffix = 'h') {
+  const v = Math.max(0, Number(s) || 0);
+  const d = Math.floor(v / 86400);
+  if (d > 0) return `${d}d ${Math.floor((v % 86400) / 3600)}${hourSuffix}`;
+  return formatCountdown(v, hourSuffix);
+}
+
+// Dashboard stat card (mockup style): icon box + label + value.
+function DashStat({ icon, label, value, accent }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-val-panel p-3 sm:p-4">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="mt-1 text-xl font-black tabular-nums text-white sm:text-2xl">{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-slate-400 sm:text-xs">{sub}</p>}
+    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3.5 sm:p-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-lg">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{label}</p>
+        <p className={`truncate text-lg font-black tabular-nums ${accent ? 'text-val-accent' : 'text-white'}`}>{value}</p>
+      </div>
     </div>
   );
 }
@@ -294,108 +369,353 @@ function WalletCard({ icon, label, value, accent }) {
   );
 }
 
-function SkinCard({ skin }) {
+// Offer card (Store daily offers + Night Market): tier-tinted border, discount
+// badge top-left, price row with VP icon; struck base price when discounted.
+function OfferCard({ skin }) {
+  const discounted = skin.discountPrice != null;
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-val-panel p-4 transition-colors hover:border-val-accent/40 sm:p-5">
-      <div className="flex min-h-[6rem] items-center justify-center sm:min-h-[7rem]">
+    <div
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-val-panel p-4 transition-all hover:-translate-y-0.5 hover:border-val-red/40"
+      style={skin.tierColor ? { borderColor: `${skin.tierColor}66` } : undefined}
+    >
+      {discounted && skin.discountPercent != null && (
+        <span className="absolute left-3 top-3 z-10 rounded bg-val-red/20 px-1.5 py-0.5 text-xs font-black tabular-nums text-val-red">
+          -{skin.discountPercent}%
+        </span>
+      )}
+      <div className="flex min-h-[6.5rem] items-center justify-center py-2 sm:min-h-[7rem]">
         {skin.image ? (
-          <img src={skin.image} alt={skin.name} className="max-h-24 w-full object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-105 sm:max-h-28" loading="lazy" />
+          <img
+            src={skin.image}
+            alt={skin.name}
+            className="max-h-24 w-full object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-105 sm:max-h-28"
+            loading="lazy"
+          />
         ) : (
           <div className="h-24 w-full rounded-lg bg-white/5" />
         )}
       </div>
-      <p className="mt-3 text-sm font-bold uppercase tracking-wide text-white sm:mt-4">{skin.name}</p>
-      <div className="mt-2 flex items-center gap-3">
-        {skin.discountPrice != null ? (
-          <>
-            <span className="flex items-center gap-1.5 text-val-accent">
-              <img src={VP_ICON} alt="VP" className="h-4 w-4" />
-              <span className="font-bold tabular-nums">{vp(skin.discountPrice)}</span>
-            </span>
-            {skin.basePrice != null && (
-              <span className="text-xs text-slate-500 line-through tabular-nums">{vp(skin.basePrice)}</span>
-            )}
-            {skin.discountPercent != null && (
-              <span className="rounded bg-val-red/20 px-1.5 py-0.5 text-xs font-bold text-val-red">-{skin.discountPercent}%</span>
-            )}
-          </>
-        ) : (
-          <span className="flex items-center gap-1.5 text-val-accent">
-            <img src={VP_ICON} alt="VP" className="h-4 w-4" />
-            <span className="font-bold tabular-nums">{vp(skin.price)}</span>
-          </span>
+      <div className="mt-2 flex items-start justify-between gap-2">
+        <p className="text-sm font-black uppercase leading-tight tracking-wide text-white">{skin.name}</p>
+        {skin.tierIcon && <img src={skin.tierIcon} alt="" className="mt-0.5 h-4 w-4 shrink-0" />}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+        <span className="font-black tabular-nums text-white">
+          {vp(discounted ? skin.discountPrice : skin.price)}
+        </span>
+        {discounted && skin.basePrice != null && (
+          <span className="text-xs tabular-nums text-slate-500 line-through">{vp(skin.basePrice)}</span>
         )}
       </div>
     </div>
   );
 }
 
-function IdentityHeader({ identity, onLogout, t }) {
+// Sticky top navbar (mockup style): back + logo left, centered tabs with a red
+// underline, VP pill + profile chip (dropdown with rank info & logout) right.
+function HubNav({ t, identity, walletVp, tab, goTab, onExit, onLogout }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const h = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [menuOpen]);
+
+  const tabs = [
+    ['dashboard', t.tabs.dashboard],
+    ['inventory', t.tabs.inventory],
+    ['store', t.tabs.store],
+    ['night', t.tabs.night],
+  ];
+  const tabBtn = (key, label, extra = '') => (
+    <button
+      key={key}
+      onClick={() => goTab(key)}
+      className={`relative shrink-0 whitespace-nowrap px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors sm:px-4 ${
+        tab === key ? 'text-white' : 'text-slate-400 hover:text-white'
+      } ${extra}`}
+    >
+      {label}
+      {tab === key && (
+        <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-val-red" />
+      )}
+    </button>
+  );
+
   return (
-    <div className="flex items-center gap-2.5 rounded-2xl border border-white/10 bg-val-panel p-3 sm:gap-3 sm:p-4">
-      {identity?.card && <img src={identity.card} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover sm:h-12 sm:w-12" />}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-black text-white sm:text-base">{identity?.displayName || t.playerFallback}</p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          {identity?.level != null && (
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 sm:text-xs">Lv {identity.level}</span>
-          )}
-          {identity?.rank?.name && identity.rank.name !== 'Unranked' ? (
-            <span className="flex items-center gap-1.5">
-              {identity.rank.icon && <img src={identity.rank.icon} alt="" className="h-4 w-4 sm:h-5 sm:w-5" />}
-              <span className="text-[11px] font-bold uppercase tracking-wider sm:text-xs" style={identity.rank.color ? { color: identity.rank.color } : undefined}>
-                {identity.rank.name}
+    <div className="sticky top-0 z-30 border-b border-white/10 bg-val-dark/90 backdrop-blur-md">
+      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:h-16 sm:gap-3 sm:px-8">
+        <button
+          onClick={onExit}
+          aria-label={t.back}
+          className="shrink-0 rounded-lg px-1.5 py-1 text-lg leading-none text-slate-400 transition-colors hover:text-white"
+        >
+          ←
+        </button>
+        <p className="shrink-0 text-sm font-black uppercase tracking-widest">
+          <span className="text-val-red">Valo</span> Shop
+        </p>
+
+        {/* Centered tabs (desktop) */}
+        <nav className="hidden flex-1 items-center justify-center md:flex">
+          {tabs.map(([key, label]) => tabBtn(key, label, 'h-14 sm:h-16'))}
+        </nav>
+        <div className="flex-1 md:hidden" />
+
+        {/* VP balance */}
+        {walletVp != null && (
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+            <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+            <span className="text-xs font-black tabular-nums text-white">{vp(walletVp)}</span>
+          </span>
+        )}
+
+        {/* Profile chip + dropdown */}
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-expanded={menuOpen}
+            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 pr-2 transition-colors hover:bg-white/10 sm:pr-3"
+          >
+            {identity?.card ? (
+              <img src={identity.card} alt="" className="h-8 w-8 rounded-full object-cover" />
+            ) : (
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xs font-black text-slate-300">
+                {(identity?.displayName || t.playerFallback).charAt(0).toUpperCase()}
               </span>
+            )}
+            <span className="hidden min-w-0 text-left leading-tight sm:block">
+              <span className="block max-w-[110px] truncate text-xs font-black text-white">
+                {identity?.displayName?.split('#')[0] || t.playerFallback}
+              </span>
+              <span className="block text-[9px] font-bold uppercase tracking-wider text-val-accent">{t.online}</span>
             </span>
-          ) : (
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">Unranked</span>
+            <span className="text-[9px] text-slate-500">▼</span>
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full z-40 mt-2 w-52 overflow-hidden rounded-2xl border border-white/10 bg-[#141d24] shadow-2xl">
+              <div className="border-b border-white/10 p-3">
+                <p className="truncate text-sm font-black text-white">{identity?.displayName || t.playerFallback}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  {identity?.level != null && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Lv {identity.level}</span>
+                  )}
+                  {identity?.rank?.name && identity.rank.name !== 'Unranked' ? (
+                    <span className="flex items-center gap-1">
+                      {identity.rank.icon && <img src={identity.rank.icon} alt="" className="h-4 w-4" />}
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wider"
+                        style={identity.rank.color ? { color: identity.rank.color } : undefined}
+                      >
+                        {identity.rank.name}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Unranked</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={onLogout}
+                className="block w-full px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-slate-300 transition-colors hover:bg-val-red/10 hover:text-val-red"
+              >
+                Logout
+              </button>
+            </div>
           )}
         </div>
       </div>
-      <button
-        onClick={onLogout}
-        className="shrink-0 rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-300 transition-colors hover:border-val-red/50 hover:text-val-red sm:px-4 sm:py-2 sm:text-xs"
-      >
-        Logout
-      </button>
+
+      {/* Mobile tabs row */}
+      <div className="no-scrollbar flex overflow-x-auto border-t border-white/5 px-2 md:hidden">
+        {tabs.map(([key, label]) => tabBtn(key, label))}
+      </div>
     </div>
   );
 }
 
-// One skin row in the Inventory tab. Free skins (no price) show a quiet
-// "Gratis" badge instead of a VP price.
-function InventorySkinRow({ skin, t }) {
+// One skin tile in the Inventory grid (mockup style): image, name, weapon
+// category subtitle, tier icon top-right, price / Free badge.
+function SkinTile({ skin, t }) {
   return (
     <div
-      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3"
+      className="group relative flex flex-col rounded-2xl border border-white/10 bg-val-panel p-3 transition-colors hover:border-val-red/40"
       style={skin.tierColor ? { borderColor: `${skin.tierColor}55` } : undefined}
     >
-      {skin.image ? (
-        <img src={skin.image} alt="" className="h-9 w-20 shrink-0 object-contain sm:h-10 sm:w-24" loading="lazy" />
-      ) : (
-        <div className="h-9 w-20 shrink-0 rounded bg-white/5 sm:h-10 sm:w-24" />
+      {skin.tierIcon && <img src={skin.tierIcon} alt="" className="absolute right-2.5 top-2.5 h-4 w-4" />}
+      {skin.limited && (
+        <span className="absolute left-2.5 top-2.5 rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+          {t.badgeLimited}
+        </span>
       )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold text-white">
-          {skin.name}
-          {skin.limited && (
-            <span className="ml-1.5 rounded bg-amber-400/15 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider text-amber-300">
-              {t.badgeLimited}
-            </span>
-          )}
-        </p>
+      <div className="flex h-20 items-center justify-center py-1 sm:h-24">
+        {skin.image ? (
+          <img
+            src={skin.image}
+            alt=""
+            className="max-h-16 w-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-105 sm:max-h-20"
+            loading="lazy"
+          />
+        ) : (
+          <div className="h-16 w-full rounded bg-white/5" />
+        )}
+      </div>
+      <p className="mt-1.5 truncate text-xs font-black uppercase tracking-wide text-white sm:text-sm">{skin.name}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">{skin.cat}</span>
         {skin.price != null ? (
-          <span className="flex items-center gap-1 text-xs text-val-accent">
+          <span className="flex shrink-0 items-center gap-1">
             <img src={VP_ICON} alt="VP" className="h-3.5 w-3.5" />
-            <span className="font-bold tabular-nums">{vp(skin.price)}</span>
+            <span className="text-xs font-black tabular-nums text-white">{vp(skin.price)}</span>
           </span>
         ) : (
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-val-accent">
             {skin.source === 'battlepass' ? t.badgeBp : t.badgeFree}
           </span>
         )}
       </div>
-      {skin.tierIcon && <img src={skin.tierIcon} alt="" className="h-5 w-5 shrink-0" />}
+    </div>
+  );
+}
+
+// Inventory view: search + category tabs, sidebar with per-category counts,
+// and the skin tile grid.
+function InventoryView({ inventory, t }) {
+  const [cat, setCat] = useState('all');
+  const [q, setQ] = useState('');
+  const skins = useMemo(
+    () => inventory.skins.map((s) => ({ ...s, cat: weaponCategory(s.name) })),
+    [inventory.skins]
+  );
+  const counts = useMemo(() => {
+    const c = {};
+    for (const s of skins) c[s.cat] = (c[s.cat] || 0) + 1;
+    return c;
+  }, [skins]);
+  const cats = [...WEAPON_CATS.map(([c]) => c), 'Melee'].filter((c) => counts[c]);
+  const filtered = skins.filter(
+    (s) =>
+      (cat === 'all' || s.cat === cat) &&
+      (!q || s.name.toLowerCase().includes(q.toLowerCase()))
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-black uppercase tracking-wide sm:text-2xl">{t.tabs.inventory}</h2>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t.searchPlaceholder}
+          className="w-full max-w-[240px] rounded-xl border border-white/10 bg-val-panel px-3.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-val-red/50"
+        />
+      </div>
+
+      {/* Category tabs */}
+      <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto border-b border-white/10 px-1">
+        {[['all', t.catAll], ...cats.map((c) => [c, c])].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setCat(key)}
+            className={`relative shrink-0 whitespace-nowrap px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+              cat === key ? 'text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {label}
+            {cat === key && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-val-red" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-start gap-4">
+        {/* Sidebar: totals per category */}
+        <aside className="hidden w-44 shrink-0 flex-col gap-3 rounded-2xl border border-white/10 bg-val-panel p-4 lg:flex">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.statSkins}</p>
+            <p className="mt-1 border-l-2 border-val-red pl-2 text-2xl font-black tabular-nums text-white">
+              {vp(skins.length)}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5 border-t border-white/10 pt-3">
+            {cats.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCat(cat === c ? 'all' : c)}
+                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                  cat === c ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{c}</span>
+                <span className="tabular-nums text-slate-500">{counts[c]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.invStatValue}</p>
+            <p className="mt-1 flex items-center gap-1.5">
+              <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+              <span className="text-base font-black tabular-nums text-white">{vp(inventory.totalValueVp)}</span>
+            </p>
+          </div>
+        </aside>
+
+        {/* Grid */}
+        <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((s) => (
+            <SkinTile key={s.id} skin={s} t={t} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Store view: heading + live refresh countdown, then the daily-offer grid.
+function StoreView({ shop, t }) {
+  const left = useCountdown(shop.remaining);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-xl font-black uppercase tracking-wide sm:text-2xl">{t.tabs.store}</h2>
+        <div className="text-right">
+          <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.offersRefreshIn}</p>
+          <p className="text-lg font-black tabular-nums text-val-red">{fmtHMS(left)}</p>
+        </div>
+      </div>
+      <p className="-mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+        {t.dailyOffers} <span className="ml-1 tabular-nums text-val-red">{fmtHMS(left)}</span>
+      </p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {shop.skins.map((s) => (
+          <OfferCard key={s.id} skin={s} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Night Market view: centered header + discount card grid.
+function NightView({ nightMarket, t }) {
+  const left = useCountdown(nightMarket.remaining);
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="text-center">
+        <h2 className="text-2xl font-black uppercase tracking-[0.15em] text-white sm:text-3xl">
+          {t.tabs.night}
+        </h2>
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.25em] text-val-red">
+          {t.nightEndsIn} {fmtDH(left, t.hourSuffix)}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {nightMarket.items.map((s) => (
+          <OfferCard key={s.id} skin={s} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -526,14 +846,28 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
 
   return (
     <div className="h-[100dvh] w-full overflow-y-auto overflow-x-hidden bg-val-dark text-white">
-      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 py-5 sm:px-8 sm:py-6">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <button onClick={onExit} className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-white">
-            ← {t.back}
-          </button>
-          <h1 className="text-lg font-black uppercase tracking-wider text-val-red">Valorant</h1>
-        </div>
+      {/* Sticky navbar (logged in only) — full width, above the content column */}
+      {session && (
+        <HubNav
+          t={t}
+          identity={overview?.identity}
+          walletVp={overview?.wallet?.vp}
+          tab={tab}
+          goTab={goTab}
+          onExit={onExit}
+          onLogout={doLogout}
+        />
+      )}
+      <div className={`mx-auto flex min-h-full w-full flex-col px-4 py-5 sm:px-8 sm:py-6 ${session ? 'max-w-6xl' : 'max-w-4xl'}`}>
+        {/* Header (login screen only — the hub has its own navbar) */}
+        {!session && (
+          <div className="mb-6 flex items-center justify-between">
+            <button onClick={onExit} className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-white">
+              ← {t.back}
+            </button>
+            <h1 className="text-lg font-black uppercase tracking-wider text-val-red">Valorant</h1>
+          </div>
+        )}
 
         {/* ---------- Not logged in: ssid setup ---------- */}
         {!session && (
@@ -593,28 +927,6 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
         {/* ---------- Logged in: hub ---------- */}
         {session && (
           <div className="flex flex-col gap-5">
-            <IdentityHeader identity={overview?.identity} onLogout={doLogout} t={t} />
-
-            {/* Tabs — horizontally scrollable on narrow screens */}
-            <div className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto border-b border-white/10 px-4 sm:mx-0 sm:gap-2 sm:px-0">
-              {[
-                ['dashboard', t.tabs.dashboard],
-                ['inventory', t.tabs.inventory],
-                ['store', t.tabs.store],
-                ['night', t.tabs.night],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => goTab(key)}
-                  className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors sm:px-4 sm:text-sm ${
-                    tab === key ? 'border-val-accent text-white' : 'border-transparent text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
             {/* Dashboard */}
             {tab === 'dashboard' && (
               <>
@@ -622,6 +934,30 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                 {overviewError && <p className="text-sm font-semibold text-val-red">{overviewError}</p>}
                 {overview && (
                   <div className="flex flex-col gap-5">
+                    {/* Welcome hero (mockup style) */}
+                    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-val-red/15 via-val-panel to-val-panel p-6 sm:p-8">
+                      {overview.identity?.card && (
+                        <img
+                          src={overview.identity.card}
+                          alt=""
+                          className="pointer-events-none absolute -right-4 top-1/2 h-36 w-36 -translate-y-1/2 rotate-6 rounded-2xl object-cover opacity-25 sm:h-44 sm:w-44"
+                        />
+                      )}
+                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">{t.welcomeBack}</p>
+                      <h2 className="mt-1 text-3xl font-black uppercase leading-none tracking-wide text-white sm:text-5xl">
+                        {overview.identity?.displayName?.split('#')[0] || t.playerFallback}
+                      </h2>
+                      <p className="mt-2 text-xs text-slate-400 sm:text-sm">{t.tagline}</p>
+                    </div>
+
+                    {/* Quick stats row */}
+                    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+                      <DashStat icon="🔫" label={t.statSkins} value={vp(overview.inventory?.ownedSkinCount)} />
+                      <DashStat icon="💎" label={t.statValue} value={`${vp(overview.inventory?.collectionValueVp)} VP`} accent />
+                      <DashStat icon="👥" label={t.statAgents} value={vp(overview.account?.agentCount)} />
+                      <DashStat icon="⭐" label={t.statLevel} value={vp(overview.account?.level)} />
+                    </div>
+
                     {/* Estimated total VP value of the skin collection (hero — the headline number) */}
                     {overview.inventory ? (
                       <div className="relative overflow-hidden rounded-3xl border border-val-accent/30 bg-gradient-to-br from-val-accent/20 via-val-panel to-val-panel p-5 sm:p-6">
@@ -759,48 +1095,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
               <>
                 {inventoryLoading && <Spinner />}
                 {inventoryError && <p className="text-sm font-semibold text-val-red">{inventoryError}</p>}
-                {inventory && (() => {
-                  // Paid skins have a content tier (and thus a price estimate);
-                  // free ones (default/battlepass/event) don't.
-                  const paidSkins = inventory.skins.filter((s) => s.price != null);
-                  const freeSkins = inventory.skins.filter((s) => s.price == null);
-                  return (
-                    <div className="flex flex-col gap-5">
-                      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-                        <StatCard label={t.invStatPremium} value={vp(paidSkins.length)} sub={t.invStatPremiumSub} />
-                        <StatCard label={t.invStatFree} value={vp(freeSkins.length)} sub={t.invStatFreeSub} />
-                        <StatCard label={t.invStatValue} value={`${vp(inventory.totalValueVp)}`} sub={t.invStatValueSub} />
-                      </div>
-
-                      {paidSkins.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-val-accent">
-                            {t.invSectionPremium} · {vp(paidSkins.length)}
-                          </p>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            {paidSkins.map((s) => (
-                              <InventorySkinRow key={s.id} skin={s} t={t} />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {freeSkins.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            {t.invSectionFree} · {vp(freeSkins.length)}
-                          </p>
-                          <p className="-mt-1.5 text-[11px] leading-relaxed text-slate-500">{t.invFreeNote}</p>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            {freeSkins.map((s) => (
-                              <InventorySkinRow key={s.id} skin={s} t={t} />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                {inventory && <InventoryView inventory={inventory} t={t} />}
               </>
             )}
 
@@ -809,16 +1104,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
               <>
                 {storeLoading && <Spinner />}
                 {storeError && <p className="text-sm font-semibold text-val-red">{storeError}</p>}
-                {store?.shop && (
-                  <div className="flex flex-col gap-4">
-                    <p className="text-sm text-slate-300">{t.storeRefresh(formatCountdown(store.shop.remaining, t.hourSuffix))}</p>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {store.shop.skins.map((s) => (
-                        <SkinCard key={s.id} skin={s} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {store?.shop && <StoreView shop={store.shop} t={t} />}
               </>
             )}
 
@@ -829,14 +1115,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                 {storeError && <p className="text-sm font-semibold text-val-red">{storeError}</p>}
                 {store && !storeLoading && (
                   store.nightMarket?.items?.length ? (
-                    <div className="flex flex-col gap-4">
-                      <p className="text-sm text-slate-300">{t.nightEnds(formatCountdown(store.nightMarket.remaining, t.hourSuffix))}</p>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        {store.nightMarket.items.map((s) => (
-                          <SkinCard key={s.id} skin={s} />
-                        ))}
-                      </div>
-                    </div>
+                    <NightView nightMarket={store.nightMarket} t={t} />
                   ) : (
                     <div className="rounded-2xl border border-white/10 bg-val-panel p-6 text-center text-slate-400">
                       {t.nightInactive}
