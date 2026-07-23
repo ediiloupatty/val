@@ -540,6 +540,44 @@ export async function fetchShop(tokens) {
     };
   }
 
+  // Active featured bundle(s) — name + art resolved from the community bundles
+  // index. TotalDiscountedCost is missing on some storefront versions, so fall
+  // back to summing the per-item discounted/base prices.
+  let bundles = [];
+  const fb = store.FeaturedBundle;
+  const rawBundles = fb?.Bundles?.length ? fb.Bundles : fb?.Bundle ? [fb.Bundle] : [];
+  if (rawBundles.length) {
+    bundles = await Promise.all(
+      rawBundles.map(async (b) => {
+        let name = 'Bundle';
+        let image = null;
+        try {
+          const r = await fetch(`${VAPI}/bundles/${b.DataAssetID}`);
+          if (r.ok) {
+            const d = (await r.json()).data;
+            name = d?.displayName || name;
+            image = d?.displayIcon || null;
+          }
+        } catch {
+          /* ignore — card renders without art */
+        }
+        const sum = (field) => (b.Items || []).reduce((acc, it) => acc + (it[field] || 0), 0);
+        const price = b.TotalDiscountedCost?.[VP_CURRENCY] ?? (b.Items?.length ? sum('DiscountedPrice') : null);
+        const basePrice = b.TotalBaseCost?.[VP_CURRENCY] ?? (b.Items?.length ? sum('BasePrice') : null);
+        return {
+          id: b.DataAssetID || b.ID,
+          name,
+          image,
+          price,
+          // Only expose the base price when it's an actual discount.
+          basePrice: basePrice != null && basePrice !== price ? basePrice : null,
+          itemCount: b.Items?.length || 0,
+          remaining: b.DurationRemainingInSeconds ?? fb?.BundleRemainingDurationInSeconds ?? 0,
+        };
+      })
+    );
+  }
+
   const [wallet, profile] = await Promise.all([
     getWallet(headers, shard, puuid),
     getIdentity(headers, shard, puuid).catch(() => null),
@@ -547,7 +585,7 @@ export async function fetchShop(tokens) {
 
   return {
     status: 'ok',
-    shop: { region, remaining: panel.SingleItemOffersRemainingDurationInSeconds || 0, skins, wallet },
+    shop: { region, remaining: panel.SingleItemOffersRemainingDurationInSeconds || 0, skins, wallet, bundles },
     nightMarket,
     wallet,
     profile,

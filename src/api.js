@@ -84,23 +84,27 @@ export async function saveProfile(deviceId, name, best) {
     accuracy: num(best?.accuracy),
     split: num(best?.split),
   };
-  try {
-    const res = await fetchWithTimeout(`${API_URL}/api/profile`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ deviceId, name, best: safeBest }),
-    });
-    if (!res.ok) {
+  // One retry after a short pause — a single dropped request or slow-network
+  // timeout shouldn't surface an error toast for such a small payload.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/api/profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ deviceId, name, best: safeBest }),
+      });
+      if (res.ok) return { ok: true };
       console.warn('[API] Worker responded with status:', res.status);
-      return { ok: false };
+      // 4xx = the payload itself was rejected — retrying won't change that.
+      if (res.status < 500) return { ok: false };
+    } catch (err) {
+      console.warn('[API] Could not sync profile to Cloudflare D1:', err.message);
     }
-    return { ok: true };
-  } catch (err) {
-    console.warn('[API] Could not sync profile to Cloudflare D1:', err.message);
-    return { ok: false };
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
   }
+  return { ok: false };
 }
 
 /**
