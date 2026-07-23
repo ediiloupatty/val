@@ -171,7 +171,9 @@ export default function App() {
 
   // Called after a successful store login: adopt the Valorant identity. The
   // name#tag becomes the app/leaderboard name; avatar/level/rank are persisted
-  // for the profile display.
+  // for the profile display. The hub fires this on every mount, so only save
+  // when the name actually changed — otherwise every shop visit re-saves the
+  // same name and surfaces a pointless success/error toast.
   const handleValorantIdentity = (identity) => {
     if (!identity) return;
     setValorantProfile(identity);
@@ -180,7 +182,8 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    if (identity.displayName) handleSetName(identity.displayName.slice(0, 20));
+    const nextName = identity.displayName ? identity.displayName.slice(0, 20) : null;
+    if (nextName && nextName !== nameRef.current) handleSetName(nextName);
     if (identity.puuid) linkValorantProfile(deviceId, identity);
   };
 

@@ -131,6 +131,8 @@ const HUB_TEXT = {
     dailyOffers: 'Penawaran Harian',
     offersRefreshIn: 'Offer refresh dalam',
     nightEndsIn: 'Berakhir dalam',
+    featuredBundle: 'Bundle Aktif',
+    bundleItems: (n) => `${n} item`,
     heroTitle: 'Estimasi Total VP Skin',
     heroNote: (priced, owned) => (
       <>
@@ -224,6 +226,8 @@ const HUB_TEXT = {
     dailyOffers: 'Daily Offers',
     offersRefreshIn: 'Offers refresh in',
     nightEndsIn: 'Ends in',
+    featuredBundle: 'Featured Bundle',
+    bundleItems: (n) => `${n} items`,
     heroTitle: 'Estimated Total Skin VP',
     heroNote: (priced, owned) => (
       <>
@@ -327,17 +331,14 @@ function fmtDH(s, hourSuffix = 'h') {
   return formatCountdown(v, hourSuffix);
 }
 
-// Dashboard stat card (mockup style): icon box + label + value.
-function DashStat({ icon, label, value, accent }) {
+// Dashboard stat card: quiet label over a bold value, no iconography.
+function DashStat({ label, value, accent }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-val-panel p-3.5 sm:p-4">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-lg">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{label}</p>
-        <p className={`truncate text-lg font-black tabular-nums ${accent ? 'text-val-accent' : 'text-white'}`}>{value}</p>
-      </div>
+    <div className="rounded-2xl border border-white/10 bg-val-panel p-3.5 sm:p-4">
+      <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{label}</p>
+      <p className={`mt-1 truncate text-lg font-black tabular-nums sm:text-xl ${accent ? 'text-val-accent' : 'text-white'}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -674,7 +675,47 @@ function InventoryView({ inventory, t }) {
   );
 }
 
-// Store view: heading + live refresh countdown, then the daily-offer grid.
+// Featured bundle hero: wide card with the bundle art as background, name,
+// price and its own live countdown. Rendered above the daily offers.
+function BundleHero({ bundle, t }) {
+  const left = useCountdown(bundle.remaining);
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-val-panel">
+      {bundle.image && (
+        <img src={bundle.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-r from-[#0f1419]/95 via-[#0f1419]/55 to-[#0f1419]/10" />
+      <div className="relative flex min-h-[170px] flex-col justify-center gap-1.5 p-6 sm:min-h-[220px] sm:p-8">
+        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-300">
+          {t.featuredBundle}
+          {bundle.itemCount > 0 && (
+            <span className="ml-2 text-slate-400">· {t.bundleItems(bundle.itemCount)}</span>
+          )}
+        </p>
+        <h3 className="text-2xl font-black uppercase leading-none tracking-wide text-white drop-shadow-lg sm:text-4xl">
+          {bundle.name}
+        </h3>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {bundle.price != null && (
+            <span className="flex items-center gap-2 rounded-xl bg-val-red px-4 py-2 shadow-lg">
+              <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+              <span className="text-sm font-black tabular-nums text-white">{vp(bundle.price)}</span>
+            </span>
+          )}
+          {bundle.basePrice != null && (
+            <span className="text-sm tabular-nums text-slate-400 line-through">{vp(bundle.basePrice)}</span>
+          )}
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+            {t.nightEndsIn} <span className="tabular-nums">{fmtDH(left, t.hourSuffix)}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Store view: heading + live refresh countdown, the active bundle hero, then
+// the daily-offer grid.
 function StoreView({ shop, t }) {
   const left = useCountdown(shop.remaining);
   return (
@@ -686,9 +727,13 @@ function StoreView({ shop, t }) {
           <p className="text-lg font-black tabular-nums text-val-red">{fmtHMS(left)}</p>
         </div>
       </div>
-      <p className="-mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-        {t.dailyOffers} <span className="ml-1 tabular-nums text-val-red">{fmtHMS(left)}</span>
-      </p>
+
+      {/* Active featured bundle(s) above the daily shop */}
+      {(shop.bundles || []).map((b) => (
+        <BundleHero key={b.id} bundle={b} t={t} />
+      ))}
+
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{t.dailyOffers}</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {shop.skins.map((s) => (
           <OfferCard key={s.id} skin={s} />
@@ -952,10 +997,10 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
 
                     {/* Quick stats row */}
                     <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-                      <DashStat icon="🔫" label={t.statSkins} value={vp(overview.inventory?.ownedSkinCount)} />
-                      <DashStat icon="💎" label={t.statValue} value={`${vp(overview.inventory?.collectionValueVp)} VP`} accent />
-                      <DashStat icon="👥" label={t.statAgents} value={vp(overview.account?.agentCount)} />
-                      <DashStat icon="⭐" label={t.statLevel} value={vp(overview.account?.level)} />
+                      <DashStat label={t.statSkins} value={vp(overview.inventory?.ownedSkinCount)} />
+                      <DashStat label={t.statValue} value={`${vp(overview.inventory?.collectionValueVp)} VP`} accent />
+                      <DashStat label={t.statAgents} value={vp(overview.account?.agentCount)} />
+                      <DashStat label={t.statLevel} value={vp(overview.account?.level)} />
                     </div>
 
                     {/* Estimated total VP value of the skin collection (hero — the headline number) */}
