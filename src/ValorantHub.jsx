@@ -677,41 +677,91 @@ function InventoryView({ inventory, t }) {
   );
 }
 
+// Labels for the mixed item types inside a bundle.
+const BUNDLE_TYPE_LABEL = { skin: 'Skin', buddy: 'Buddy', card: 'Card', spray: 'Spray', title: 'Title' };
+
+// One item tile inside the expanded bundle contents.
+function BundleItemTile({ item }) {
+  return (
+    <div className="flex flex-col rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="flex h-14 items-center justify-center">
+        {item.image ? (
+          <img src={item.image} alt="" className="max-h-12 max-w-full object-contain" loading="lazy" />
+        ) : (
+          <div className="h-10 w-full rounded bg-white/5" />
+        )}
+      </div>
+      <p className="mt-2 truncate text-[11px] font-bold uppercase tracking-wide text-white">{item.name}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+          {BUNDLE_TYPE_LABEL[item.type] || item.type}
+        </span>
+        {item.price != null && item.price > 0 && (
+          <span className="flex shrink-0 items-center gap-1">
+            <img src={VP_ICON} alt="VP" className="h-3 w-3" />
+            <span className="text-[11px] font-black tabular-nums text-white">{vp(item.price)}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Featured bundle hero: wide card with the bundle art as background, name,
-// price and its own live countdown. Rendered above the daily offers.
+// price and its own live countdown. Clicking it expands the item list.
 function BundleHero({ bundle, t }) {
   const left = useCountdown(bundle.remaining);
+  const [open, setOpen] = useState(false);
+  const hasItems = bundle.items?.length > 0;
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-val-panel">
-      {bundle.image && (
-        <img src={bundle.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0f1419]/95 via-[#0f1419]/55 to-[#0f1419]/10" />
-      <div className="relative flex min-h-[170px] flex-col justify-center gap-1.5 p-6 sm:min-h-[220px] sm:p-8">
-        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-300">
-          {t.featuredBundle}
-          {bundle.itemCount > 0 && (
-            <span className="ml-2 text-slate-400">· {t.bundleItems(bundle.itemCount)}</span>
-          )}
-        </p>
-        <h3 className="text-2xl font-black uppercase leading-none tracking-wide text-white drop-shadow-lg sm:text-4xl">
-          {bundle.name}
-        </h3>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {bundle.price != null && (
-            <span className="flex items-center gap-2 rounded-xl bg-val-red px-4 py-2 shadow-lg">
-              <img src={VP_ICON} alt="VP" className="h-4 w-4" />
-              <span className="text-sm font-black tabular-nums text-white">{vp(bundle.price)}</span>
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-val-panel">
+      <button
+        onClick={() => hasItems && setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`relative block w-full text-left ${hasItems ? 'cursor-pointer' : 'cursor-default'}`}
+      >
+        {bundle.image && (
+          <img src={bundle.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0f1419]/95 via-[#0f1419]/55 to-[#0f1419]/10" />
+        <div className="relative flex min-h-[170px] flex-col justify-center gap-1.5 p-6 sm:min-h-[220px] sm:p-8">
+          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-300">
+            {t.featuredBundle}
+          </p>
+          <h3 className="text-2xl font-black uppercase leading-none tracking-wide text-white drop-shadow-lg sm:text-4xl">
+            {bundle.name}
+          </h3>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {bundle.price != null && (
+              <span className="flex items-center gap-2 rounded-xl bg-val-red px-4 py-2 shadow-lg">
+                <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+                <span className="text-sm font-black tabular-nums text-white">{vp(bundle.price)}</span>
+              </span>
+            )}
+            {bundle.basePrice != null && (
+              <span className="text-sm tabular-nums text-slate-400 line-through">{vp(bundle.basePrice)}</span>
+            )}
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+              {t.nightEndsIn} <span className="tabular-nums">{fmtDH(left, t.hourSuffix)}</span>
             </span>
-          )}
-          {bundle.basePrice != null && (
-            <span className="text-sm tabular-nums text-slate-400 line-through">{vp(bundle.basePrice)}</span>
-          )}
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
-            {t.nightEndsIn} <span className="tabular-nums">{fmtDH(left, t.hourSuffix)}</span>
-          </span>
+            {hasItems && (
+              <span className="ml-auto flex items-center gap-1.5 rounded-lg border border-white/15 bg-black/30 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-200">
+                {t.bundleItems(bundle.items.length)}
+                <span className={`text-[8px] transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      </button>
+
+      {/* Expanded contents */}
+      {open && hasItems && (
+        <div className="grid grid-cols-2 gap-3 border-t border-white/10 p-4 sm:grid-cols-3 lg:grid-cols-4">
+          {bundle.items.map((item, i) => (
+            <BundleItemTile key={item.id || i} item={item} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

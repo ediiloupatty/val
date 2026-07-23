@@ -133,6 +133,33 @@ async function resolveSkin(levelId) {
   }
 }
 
+// Riot item-type UUIDs → community-API lookup path, for resolving the mixed
+// contents of a bundle (skins, buddies, cards, sprays, titles).
+const ITEM_TYPE_ENDPOINTS = {
+  'e7c63390-eda7-46e0-bb7a-a6abdacd2433': { path: 'weapons/skinlevels', type: 'skin' },
+  'dd3bf334-87f3-40bd-b043-682a57a8dc3a': { path: 'buddies/levels', type: 'buddy' },
+  '3f296c07-64c3-494c-923b-fe692a4fa1bd': { path: 'playercards', type: 'card' },
+  'd5f120f8-ff8c-4aac-92ea-f2b5acbe9475': { path: 'sprays', type: 'spray' },
+  'de7caa6b-adf7-4588-bbd1-143831e786c6': { path: 'playertitles', type: 'title' },
+};
+
+async function resolveBundleItem(typeId, itemId) {
+  const def = ITEM_TYPE_ENDPOINTS[(typeId || '').toLowerCase()];
+  if (!def || !itemId) return { name: 'Unknown item', image: null, type: 'other' };
+  try {
+    const res = await fetch(`${VAPI}/${def.path}/${itemId}`);
+    const j = await res.json();
+    const d = j.data || {};
+    return {
+      name: d.displayName || 'Unknown item',
+      image: d.displayIcon || d.fullTransparentIcon || d.largeArt || null,
+      type: def.type,
+    };
+  } catch {
+    return { name: 'Unknown item', image: null, type: def.type };
+  }
+}
+
 async function resolveRank(tier) {
   if (!tier || tier <= 0) return { tier: 0, name: 'Unranked', icon: null, color: null };
   try {
@@ -564,6 +591,20 @@ export async function fetchShop(tokens) {
         const sum = (field) => (b.Items || []).reduce((acc, it) => acc + (it[field] || 0), 0);
         const price = b.TotalDiscountedCost?.[VP_CURRENCY] ?? (b.Items?.length ? sum('DiscountedPrice') : null);
         const basePrice = b.TotalBaseCost?.[VP_CURRENCY] ?? (b.Items?.length ? sum('BasePrice') : null);
+        // Resolve every item in the bundle (skins, buddies, cards, sprays…)
+        // so the client can list the contents on demand.
+        const items = await Promise.all(
+          (b.Items || []).map(async (it) => {
+            const meta = await resolveBundleItem(it.Item?.ItemTypeID, it.Item?.ItemID);
+            return {
+              id: it.Item?.ItemID,
+              name: meta.name,
+              image: meta.image,
+              type: meta.type,
+              price: it.DiscountedPrice ?? it.BasePrice ?? null,
+            };
+          })
+        );
         return {
           id: b.DataAssetID || b.ID,
           name,
@@ -572,6 +613,7 @@ export async function fetchShop(tokens) {
           // Only expose the base price when it's an actual discount.
           basePrice: basePrice != null && basePrice !== price ? basePrice : null,
           itemCount: b.Items?.length || 0,
+          items,
           remaining: b.DurationRemainingInSeconds ?? fb?.BundleRemainingDurationInSeconds ?? 0,
         };
       })
