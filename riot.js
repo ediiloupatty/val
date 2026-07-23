@@ -134,30 +134,50 @@ async function resolveSkin(levelId) {
 }
 
 // Riot item-type UUIDs → community-API lookup path, for resolving the mixed
-// contents of a bundle (skins, buddies, cards, sprays, titles).
+// contents of a bundle (skins, chromas, buddies, cards, sprays, titles).
 const ITEM_TYPE_ENDPOINTS = {
   'e7c63390-eda7-46e0-bb7a-a6abdacd2433': { path: 'weapons/skinlevels', type: 'skin' },
+  '3ad1b2b2-acdb-4524-852f-954a76ddae0a': { path: 'weapons/skinchromas', type: 'skin' },
   'dd3bf334-87f3-40bd-b043-682a57a8dc3a': { path: 'buddies/levels', type: 'buddy' },
   '3f296c07-64c3-494c-923b-fe692a4fa1bd': { path: 'playercards', type: 'card' },
   'd5f120f8-ff8c-4aac-92ea-f2b5acbe9475': { path: 'sprays', type: 'spray' },
   'de7caa6b-adf7-4588-bbd1-143831e786c6': { path: 'playertitles', type: 'title' },
 };
+// Tried in order when the type UUID isn't in the map (Riot adds new cosmetic
+// types over time) — whichever endpoint recognises the id wins.
+const BUNDLE_ITEM_FALLBACKS = Object.values(ITEM_TYPE_ENDPOINTS);
 
-async function resolveBundleItem(typeId, itemId) {
-  const def = ITEM_TYPE_ENDPOINTS[(typeId || '').toLowerCase()];
-  if (!def || !itemId) return { name: 'Unknown item', image: null, type: 'other' };
+async function tryResolveItem(def, itemId) {
   try {
     const res = await fetch(`${VAPI}/${def.path}/${itemId}`);
-    const j = await res.json();
-    const d = j.data || {};
+    if (!res.ok) return null;
+    const d = (await res.json()).data || {};
+    if (!d.displayName) return null;
     return {
-      name: d.displayName || 'Unknown item',
+      name: d.displayName,
       image: d.displayIcon || d.fullTransparentIcon || d.largeArt || null,
       type: def.type,
     };
   } catch {
-    return { name: 'Unknown item', image: null, type: def.type };
+    return null;
   }
+}
+
+// Resolves one bundle item. Returns null when no endpoint recognises the id —
+// the caller drops it rather than showing an "Unknown item" placeholder.
+async function resolveBundleItem(typeId, itemId) {
+  if (!itemId) return null;
+  const def = ITEM_TYPE_ENDPOINTS[(typeId || '').toLowerCase()];
+  if (def) {
+    const hit = await tryResolveItem(def, itemId);
+    if (hit) return hit;
+  }
+  for (const fb of BUNDLE_ITEM_FALLBACKS) {
+    if (def && fb.path === def.path) continue; // already tried
+    const hit = await tryResolveItem(fb, itemId);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 async function resolveRank(tier) {
@@ -593,18 +613,21 @@ export async function fetchShop(tokens) {
         const basePrice = b.TotalBaseCost?.[VP_CURRENCY] ?? (b.Items?.length ? sum('BasePrice') : null);
         // Resolve every item in the bundle (skins, buddies, cards, sprays…)
         // so the client can list the contents on demand.
-        const items = await Promise.all(
-          (b.Items || []).map(async (it) => {
-            const meta = await resolveBundleItem(it.Item?.ItemTypeID, it.Item?.ItemID);
-            return {
-              id: it.Item?.ItemID,
-              name: meta.name,
-              image: meta.image,
-              type: meta.type,
-              price: it.DiscountedPrice ?? it.BasePrice ?? null,
-            };
-          })
-        );
+        const items = (
+          await Promise.all(
+            (b.Items || []).map(async (it) => {
+              const meta = await resolveBundleItem(it.Item?.ItemTypeID, it.Item?.ItemID);
+              if (!meta) return null; // unrecognised cosmetic type — skip
+              return {
+                id: it.Item?.ItemID,
+                name: meta.name,
+                image: meta.image,
+                type: meta.type,
+                price: it.DiscountedPrice ?? it.BasePrice ?? null,
+              };
+            })
+          )
+        ).filter(Boolean);
         return {
           id: b.DataAssetID || b.ID,
           name,

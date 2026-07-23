@@ -1037,40 +1037,18 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                         <img
                           src={overview.identity.card}
                           alt=""
-                          className="pointer-events-none absolute -right-4 top-1/2 h-36 w-36 -translate-y-1/2 rotate-6 rounded-2xl object-cover opacity-20 sm:h-44 sm:w-44"
+                          className="pointer-events-none absolute -right-2 top-1/2 h-36 w-36 -translate-y-1/2 rounded-2xl object-cover opacity-40 [mask-image:linear-gradient(90deg,transparent,black_35%)] sm:h-48 sm:w-48"
                         />
                       )}
-                      <div className="relative flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-                            <span className="mr-1.5 text-val-red">{'//'}</span>
-                            {t.welcomeBack}
-                          </p>
-                          <h2 className="mt-1.5 truncate text-3xl font-black uppercase leading-none tracking-wide text-white sm:text-5xl">
-                            {overview.identity?.displayName?.split('#')[0] || t.playerFallback}
-                          </h2>
-                          <p className="mt-2 text-xs text-slate-400 sm:text-sm">{t.tagline}</p>
-                        </div>
-                        <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
-                          {overview.identity?.rank?.name && (
-                            <span className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-1.5">
-                              {overview.identity.rank.icon && (
-                                <img src={overview.identity.rank.icon} alt="" className="h-5 w-5" />
-                              )}
-                              <span
-                                className="text-[11px] font-black uppercase tracking-wider"
-                                style={overview.identity.rank.color ? { color: overview.identity.rank.color } : undefined}
-                              >
-                                {overview.identity.rank.name}
-                              </span>
-                            </span>
-                          )}
-                          {overview.identity?.level != null && (
-                            <span className="rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-300">
-                              Lv <span className="text-white">{overview.identity.level}</span>
-                            </span>
-                          )}
-                        </div>
+                      <div className="relative min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+                          <span className="mr-1.5 text-val-red">{'//'}</span>
+                          {t.welcomeBack}
+                        </p>
+                        <h2 className="mt-1.5 truncate text-3xl font-black uppercase leading-none tracking-wide text-white sm:text-5xl">
+                          {overview.identity?.displayName?.split('#')[0] || t.playerFallback}
+                        </h2>
+                        <p className="mt-2 text-xs text-slate-400 sm:text-sm">{t.tagline}</p>
                       </div>
                     </div>
 
@@ -1094,17 +1072,24 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                         {/* Collection value */}
                         {overview.inventory && (
                           <div className="relative overflow-hidden rounded-2xl border border-val-accent/25 bg-gradient-to-br from-val-accent/10 via-val-panel to-val-panel p-5 sm:p-6">
-                            <SectionLabel color="text-val-accent">{t.heroTitle}</SectionLabel>
-                            <div className="mt-3 flex items-end gap-2.5">
-                              <img src={VP_ICON} alt="VP" className="mb-1 h-7 w-7 shrink-0" />
-                              <span className="text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
-                                {vp(overview.inventory.collectionValueVp)}
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <SectionLabel color="text-val-accent">{t.heroTitle}</SectionLabel>
+                                <div className="mt-3 flex items-end gap-2">
+                                  <span className="text-4xl font-black leading-none tabular-nums text-white sm:text-5xl">
+                                    {vp(overview.inventory.collectionValueVp)}
+                                  </span>
+                                  <span className="mb-0.5 text-sm font-bold text-slate-400">VP</span>
+                                </div>
+                                <div className="mt-3 h-1 w-2/3 rounded-full bg-gradient-to-r from-val-red via-val-red/50 to-transparent" />
+                                <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                                  {t.heroNote(vp(overview.inventory.pricedSkinCount), vp(overview.inventory.ownedSkinCount))}
+                                </p>
+                              </div>
+                              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-val-accent/30 bg-val-accent/10 sm:h-16 sm:w-16">
+                                <img src={VP_ICON} alt="" className="h-7 w-7 sm:h-8 sm:w-8" />
                               </span>
-                              <span className="mb-0.5 text-sm font-bold text-slate-400">VP</span>
                             </div>
-                            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-                              {t.heroNote(vp(overview.inventory.pricedSkinCount), vp(overview.inventory.ownedSkinCount))}
-                            </p>
                           </div>
                         )}
 
@@ -1135,38 +1120,6 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                           );
                         })()}
 
-                        {/* Resale estimate */}
-                        {overview.inventory && (() => {
-                          const skinVp = overview.inventory.collectionValueVp || 0;
-                          const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
-                          const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
-                          const mult = rankMultiplier(overview.identity?.rank?.name);
-                          const limited = overview.inventory.limitedSkins || [];
-                          const prem = limitedPremium(limited);
-                          const low = spendIdr * RESALE_RATE_LOW * mult + prem.low;
-                          const high = spendIdr * RESALE_RATE_HIGH * mult + prem.high;
-                          if (spendIdr <= 0 && prem.high <= 0) return null;
-                          return (
-                            <div className="rounded-2xl border border-white/10 bg-val-panel p-5 sm:p-6">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <SectionLabel>{t.resaleTitle}</SectionLabel>
-                                <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-300">
-                                  {t.resaleRankLine(overview.identity?.rank?.name || '-', mult)}
-                                </span>
-                              </div>
-                              <p className="mt-3 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
-                                {rp(low)} <span className="text-base font-bold text-slate-500">—</span> {rp(high)}
-                              </p>
-                              {limited.length > 0 && (
-                                <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[11px] leading-relaxed text-amber-300">
-                                  {t.resaleLimitedLine(limited.join(', '), rp(prem.low), rp(prem.high))}
-                                </div>
-                              )}
-                              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{t.resaleNote}</p>
-                              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">{t.resaleWarning}</p>
-                            </div>
-                          );
-                        })()}
                       </div>
 
                       <div className="flex flex-col gap-4">
@@ -1208,13 +1161,12 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                           )}
                         </div>
 
-                        {/* Account collection counts */}
+                        {/* Account collection counts — Level & Agent already
+                            live in the quick-stats row, so they're not repeated */}
                         {overview.account && (
                           <div className="rounded-2xl border border-white/10 bg-val-panel p-5">
                             <SectionLabel>{t.collectionTitle}</SectionLabel>
-                            <div className="mt-4 grid grid-cols-3 gap-y-5">
-                              <AccountStat label="Level" value={vp(overview.account.level)} />
-                              <AccountStat label="Agent" value={vp(overview.account.agentCount)} />
+                            <div className="mt-4 grid grid-cols-4 gap-y-5">
                               <AccountStat label="Card" value={vp(overview.account.cardCount)} />
                               <AccountStat label="Spray" value={vp(overview.account.sprayCount)} />
                               <AccountStat label="Buddy" value={vp(overview.account.buddyCount)} />
@@ -1224,6 +1176,39 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                         )}
                       </div>
                     </div>
+
+                    {/* Resale estimate — full width, closing the dashboard */}
+                    {overview.inventory && (() => {
+                      const skinVp = overview.inventory.collectionValueVp || 0;
+                      const bpVp = (overview.inventory.battlepassBoughtCount || 0) * BATTLEPASS_COST_VP;
+                      const spendIdr = (skinVp + bpVp) * IDR_PER_VP;
+                      const mult = rankMultiplier(overview.identity?.rank?.name);
+                      const limited = overview.inventory.limitedSkins || [];
+                      const prem = limitedPremium(limited);
+                      const low = spendIdr * RESALE_RATE_LOW * mult + prem.low;
+                      const high = spendIdr * RESALE_RATE_HIGH * mult + prem.high;
+                      if (spendIdr <= 0 && prem.high <= 0) return null;
+                      return (
+                        <div className="rounded-2xl border border-white/10 bg-val-panel p-5 sm:p-6">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <SectionLabel>{t.resaleTitle}</SectionLabel>
+                            <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-300">
+                              {t.resaleRankLine(overview.identity?.rank?.name || '-', mult)}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-2xl font-black leading-none tabular-nums text-white sm:text-3xl">
+                            {rp(low)} <span className="text-base font-bold text-slate-500">—</span> {rp(high)}
+                          </p>
+                          {limited.length > 0 && (
+                            <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[11px] leading-relaxed text-amber-300">
+                              {t.resaleLimitedLine(limited.join(', '), rp(prem.low), rp(prem.high))}
+                            </div>
+                          )}
+                          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{t.resaleNote}</p>
+                          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">{t.resaleWarning}</p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </>
