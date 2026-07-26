@@ -2,8 +2,6 @@ import {
   fetchShop as riotFetchShop,
   fetchOverview as riotFetchOverview,
   fetchInventoryDetail as riotFetchInventory,
-  fetchMatchHistory as riotFetchMatches,
-  fetchMatchDetail as riotFetchMatch,
   reauthFromSsid as riotReauth,
   extractTokens,
 } from './riot.js';
@@ -1123,97 +1121,6 @@ export default {
         console.error("valorant inventory error:", err);
         return new Response(
           JSON.stringify({ success: false, error: "Gagal mengambil inventory" }),
-          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-    }
-
-    // POST /api/valorant/matches — a page of match history. Body: { ssid,
-    // puuid?, queue?, startIndex?, count? }. `puuid` browses another player's
-    // history (their id comes from a scoreboard we already fetched); omitted =
-    // the logged-in account. Each row is expanded via match-details, so this is
-    // the heaviest upstream call in the app — keep `count` small.
-    if (path === "/api/valorant/matches" && request.method === "POST") {
-      try {
-        const body = await request.json();
-        if (!(await shopRateOk(env, request))) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
-            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        const resolved = await resolveTokens(body);
-        if (!resolved.ok) {
-          return new Response(
-            JSON.stringify({ success: false, error: resolved.error }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        const result = await riotFetchMatches(resolved.tokens, {
-          puuid: body.puuid,
-          queue: body.queue,
-          startIndex: body.startIndex,
-          count: body.count,
-        });
-        if (result.status === "ok") {
-          return new Response(
-            JSON.stringify({
-              success: true,
-              player: result.player,
-              isSelf: result.isSelf,
-              total: result.total,
-              startIndex: result.startIndex,
-              matches: result.matches,
-            }),
-            { headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        return new Response(
-          JSON.stringify({ success: false, error: result.error }),
-          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      } catch (err) {
-        console.error("valorant matches error:", err);
-        return new Response(
-          JSON.stringify({ success: false, error: "Gagal mengambil riwayat match" }),
-          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-    }
-
-    // POST /api/valorant/match — one match's full scoreboard. Body: { ssid,
-    // matchId, viewerPuuid? }.
-    if (path === "/api/valorant/match" && request.method === "POST") {
-      try {
-        const body = await request.json();
-        if (!(await shopRateOk(env, request))) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Terlalu banyak permintaan. Pelan-pelan ya." }),
-            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        const resolved = await resolveTokens(body);
-        if (!resolved.ok) {
-          return new Response(
-            JSON.stringify({ success: false, error: resolved.error }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        const result = await riotFetchMatch(resolved.tokens, body.matchId, body.viewerPuuid);
-        if (result.status === "ok") {
-          return new Response(
-            JSON.stringify({ success: true, match: result.match }),
-            { headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        }
-        return new Response(
-          JSON.stringify({ success: false, error: result.error }),
-          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      } catch (err) {
-        console.error("valorant match error:", err);
-        return new Response(
-          JSON.stringify({ success: false, error: "Gagal mengambil detail match" }),
           { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
       }
