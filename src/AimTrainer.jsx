@@ -480,13 +480,20 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     let trackingSwitchOffTime = -1;
     let trackingSwitchTimes  = [];
 
-    // --- Hit flash point light (reused across hits) ---------------------------
-    // Brighter and slightly longer-lived than a pure impact cue needs to be:
-    // the point of it is that the floor and neighbouring targets visibly catch
-    // the light, which is what sells the shot as happening in the room.
-    const HIT_LIGHT_PEAK = 9;
-    const HIT_LIGHT_TIME = 0.18;
-    const hitLight = new THREE.PointLight(0xffffff, 0, 10);
+    // --- Impact tuning --------------------------------------------------------
+    // Every number the hit flash is made of, in one place. Deliberately small:
+    // the cue should read like a muzzle flash catching the target for a frame,
+    // not like the ball detonating. Raising any of these past roughly double
+    // starts washing the arena out.
+    const HIT_LIGHT_PEAK = 3;      // point-light intensity at the instant of impact
+    const HIT_LIGHT_TIME = 0.09;   // seconds for that light to fall to zero
+    const HIT_LIGHT_RANGE = 5;     // how far the flash reaches into the room
+    const HIT_CORE_EMISSIVE = 1.4; // how hot the ball's own material goes
+    const HIT_SHELL_GROWTH = 1.45; // shell's final size, as a multiple of the radius
+    const HIT_SHELL_OPACITY = 0.3; // shell's opacity at birth
+    const HIT_SHELL_TIME = 0.1;    // seconds for the shell to expand and vanish
+
+    const hitLight = new THREE.PointLight(0xffffff, 0, HIT_LIGHT_RANGE);
     scene.add(hitLight);
     let hitLightTimer = 0;
 
@@ -516,10 +523,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     }
 
     // --- Impact flash shell ---------------------------------------------------
-    // An additive sphere that bursts out of the target on impact and fades. Unit
-    // radius, scaled per hit, so every target size shares one geometry. Additive
-    // + depthWrite:false so it reads as light rather than as another object —
-    // it brightens whatever is behind it instead of occluding it.
+    // A thin additive sphere that swells just past the target and is gone within
+    // a tenth of a second. Unit radius, scaled per hit, so every target size
+    // shares one geometry. Additive + depthWrite:false so it reads as light
+    // rather than as another object — it brightens what's behind it instead of
+    // occluding it.
     const flashGeo = new THREE.SphereGeometry(1, 16, 12);
     const impactFlashes = []; // { mesh, age, maxAge, from, to }
 
@@ -527,28 +535,33 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       const mat = new THREE.MeshBasicMaterial({
         color: hexColor,
         transparent: true,
-        opacity: 0.9,
+        opacity: HIT_SHELL_OPACITY,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
       const mesh = new THREE.Mesh(flashGeo, mat);
       mesh.position.copy(pos);
-      const from = radius * 1.05;
+      const from = radius * 1.02;
       mesh.scale.setScalar(from);
-      impactFlashes.push({ mesh, age: 0, maxAge: 0.22, from, to: radius * 2.6 });
+      impactFlashes.push({
+        mesh,
+        age: 0,
+        maxAge: HIT_SHELL_TIME,
+        from,
+        to: radius * HIT_SHELL_GROWTH,
+      });
       scene.add(mesh);
     }
 
     // Everything that fires the instant a target dies, from either the shooting
-    // path or a tracking kill: the ball goes white-hot from the inside, a glow
-    // shell expands around it, debris scatters, and a point light throws the
-    // colour onto the surrounding geometry for a frame or two.
+    // path or a tracking kill: the ball brightens from the inside, a faint shell
+    // pops around it, debris scatters, and a short point light throws the colour
+    // onto whatever is nearby.
     function playImpact(mesh, hexColor) {
       const radius = hitRadii.get(mesh) || mesh.userData.radius || 0.28;
-      // White core, not the target's own colour: a hit should look like a burst
-      // of light, and the shell around it carries the colour.
-      mesh.material.emissive.setHex(0xffffff);
-      mesh.material.emissiveIntensity = 3.4;
+      // Brighten the ball's own colour rather than blowing it out to white — a
+      // white core turned the hit into a flashbang at this size on screen.
+      mesh.material.emissiveIntensity = HIT_CORE_EMISSIVE;
       spawnImpactFlash(mesh.position, hexColor, radius);
       spawnHitParticles(mesh.position, hexColor);
       hitLight.color.setHex(hexColor);
@@ -1150,9 +1163,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           const frac = dtg.age / 0.15;
           const s = Math.max(0, 1 - Math.pow(frac, 3));
           dtg.mesh.scale.set(s, s, s);
-          // The white-hot core set on impact cools as the ball collapses, so the
-          // last thing seen is a bright pinpoint rather than a shape vanishing.
-          dtg.mesh.material.emissiveIntensity = 3.4 * (1 - frac) * (1 - frac);
+          // The brightened core set on impact cools as the ball collapses, so
+          // the last thing seen is a lit pinpoint rather than a shape vanishing.
+          dtg.mesh.material.emissiveIntensity = HIT_CORE_EMISSIVE * (1 - frac) * (1 - frac);
         }
       }
 
@@ -1169,7 +1182,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           // Fast out, slow settle — an explosion decelerates, it doesn't coast.
           const eased = 1 - Math.pow(1 - frac, 3);
           f.mesh.scale.setScalar(f.from + (f.to - f.from) * eased);
-          f.mesh.material.opacity = 0.9 * Math.pow(1 - frac, 2);
+          f.mesh.material.opacity = HIT_SHELL_OPACITY * Math.pow(1 - frac, 2);
         }
       }
 
