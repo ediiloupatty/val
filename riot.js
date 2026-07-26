@@ -532,6 +532,281 @@ async function getBattlepass(headers, shard, puuid) {
   }
 }
 
+// --- match history ---------------------------------------------------------
+// Community-API content indexes needed to render a match (map art, agent
+// portraits, rank icons). They're static, so cache them per isolate — a single
+// scoreboard would otherwise fire a dozen identical lookups.
+let mapIndexCache = null;
+let agentIndexCache = null;
+let tierIndexCache = null;
+
+async function getMapIndex() {
+  if (mapIndexCache) return mapIndexCache;
+  const idx = {};
+  try {
+    const res = await fetch(`${VAPI}/maps`);
+    const j = await res.json();
+    for (const m of j.data || []) {
+      // matchInfo.mapId is the asset path (e.g. /Game/Maps/Ascent/Ascent).
+      if (m.mapUrl) idx[m.mapUrl.toLowerCase()] = { name: m.displayName, image: m.listViewIcon || m.splash || null };
+    }
+  } catch {
+    /* match rows render without map art */
+  }
+  mapIndexCache = idx;
+  return idx;
+}
+
+async function getAgentIndex() {
+  if (agentIndexCache) return agentIndexCache;
+  const idx = {};
+  try {
+    const res = await fetch(`${VAPI}/agents?isPlayableCharacter=true`);
+    const j = await res.json();
+    for (const a of j.data || []) {
+      idx[(a.uuid || '').toLowerCase()] = { name: a.displayName, icon: a.displayIconSmall || a.displayIcon || null };
+    }
+  } catch {
+    /* scoreboard renders without agent art */
+  }
+  agentIndexCache = idx;
+  return idx;
+}
+
+async function getTierIndex() {
+  if (tierIndexCache) return tierIndexCache;
+  const idx = {};
+  try {
+    const res = await fetch(`${VAPI}/competitivetiers`);
+    const j = await res.json();
+    const episodes = j.data || [];
+    for (const t of episodes[episodes.length - 1]?.tiers || []) {
+      idx[t.tier] = {
+        tier: t.tier,
+        name: t.tierName || 'Unranked',
+        icon: t.smallIcon || t.largeIcon || null,
+        color: t.color ? `#${t.color.slice(0, 6)}` : null,
+      };
+    }
+  } catch {
+    /* scoreboard renders without rank art */
+  }
+  tierIndexCache = idx;
+  return idx;
+}
+
+const QUEUE_LABELS = {
+  competitive: 'Competitive',
+  unrated: 'Unrated',
+  swiftplay: 'Swiftplay',
+  spikerush: 'Spike Rush',
+  deathmatch: 'Deathmatch',
+  hurm: 'Team Deathmatch',
+  ggteam: 'Escalation',
+  onefa: 'Replication',
+  snowball: 'Snowball Fight',
+  newmap: 'New Map',
+  premier: 'Premier',
+  seeding: 'Premier Seeding',
+  '': 'Custom',
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isRiotId = (v) => UUID_RE.test(String(v || ''));
+
+// One page of the private match-history endpoint. Riot hard-caps a request at
+// 20 entries, so walk pages until we have `count` (or the account runs out).
+// Returns { total, entries: [{ MatchID, GameStartTime, QueueID }] }.
+async function getMatchHistory(headers, shard, puuid, { queue = null, startIndex = 0, count = 10 } = {}) {
+  const entries = [];
+  let total = 0;
+  for (let start = startIndex; entries.length < count; start += 20) {
+    const size = Math.min(20, count - entries.length);
+    const q = new URLSearchParams({ startIndex: String(start), endIndex: String(start + size) });
+    if (queue) q.set('queue', queue);
+    let data;
+    try {
+      const res = await fetch(pdUrl(shard, `/match-history/v1/history/${puuid}?${q}`), { headers });
+      if (!res.ok) break;
+      data = await res.json();
+    } catch {
+      break;
+    }
+    total = data.Total ?? total;
+    const page = data.History || [];
+    if (!page.length) break;
+    entries.push(...page);
+    if (start + size >= total) break;
+  }
+  return { total, entries: entries.slice(0, count) };
+}
+
+// RR gain/loss per competitive match, keyed by match id. Cheap (one call per 20
+// matches) and best-effort: Riot restricts this for accounts other than your own.
+async function getCompetitiveUpdates(headers, shard, puuid, count = 20) {
+  const out = {};
+  try {
+    const q = new URLSearchParams({ startIndex: '0', endIndex: String(Math.min(20, count)), queue: 'competitive' });
+    const res = await fetch(pdUrl(shard, `/mmr/v1/players/${puuid}/competitiveupdates?${q}`), { headers });
+    if (!res.ok) return out;
+    const j = await res.json();
+    for (const m of j.Matches || []) {
+      out[m.MatchID] = {
+        rrChange: m.RankedRatingEarned ?? null,
+        rr: m.RankedRatingAfterUpdate ?? null,
+        tier: m.TierAfterUpdate ?? null,
+      };
+    }
+  } catch {
+    /* rows render without RR */
+  }
+  return out;
+}
+
+async function getMatchDetails(headers, shard, matchId) {
+  try {
+    const res = await fetch(pdUrl(shard, `/match-details/v1/matches/${matchId}`), { headers });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// Per-player damage + hit locations, summed across every round. Riot only
+// reports these inside roundResults, never in the flat player stats.
+function shotTotals(raw) {
+  const totals = {};
+  for (const round of raw.roundResults || []) {
+    for (const ps of round.playerStats || []) {
+      const t = (totals[ps.subject] ||= { damage: 0, head: 0, body: 0, leg: 0 });
+      for (const d of ps.damage || []) {
+        t.damage += d.damage || 0;
+        t.head += d.headshots || 0;
+        t.body += d.bodyshots || 0;
+        t.leg += d.legshots || 0;
+      }
+    }
+  }
+  return totals;
+}
+
+// Reduce a ~2 MB match-details payload to what the UI actually draws.
+// `viewer` decides whose row is highlighted and whose win/loss is reported —
+// pass another player's puuid and the same match reads from their side.
+function buildMatch(raw, idx, viewer) {
+  const info = raw.matchInfo || {};
+  const queueId = info.queueID || info.queueId || '';
+  const shots = shotTotals(raw);
+
+  const teams = (raw.teams || []).map((tm) => ({
+    id: tm.teamId,
+    won: !!tm.won,
+    roundsWon: tm.roundsWon ?? 0,
+    roundsPlayed: tm.roundsPlayed ?? 0,
+  }));
+
+  const players = (raw.players || []).map((p) => {
+    const st = p.stats || {};
+    const team = teams.find((tm) => tm.id === p.teamId);
+    const rounds = st.roundsPlayed || team?.roundsPlayed || 0;
+    const sh = shots[p.subject] || { damage: 0, head: 0, body: 0, leg: 0 };
+    const hits = sh.head + sh.body + sh.leg;
+    const agent = idx.agents[(p.characterId || '').toLowerCase()] || null;
+    return {
+      puuid: p.subject,
+      name: p.gameName ? `${p.gameName}#${p.tagLine || ''}`.replace(/#$/, '') : 'Player',
+      teamId: p.teamId,
+      agent: agent?.name || null,
+      agentIcon: agent?.icon || null,
+      card: p.playerCard ? `https://media.valorant-api.com/playercards/${p.playerCard}/smallart.png` : null,
+      rank: idx.tiers[p.competitiveTier] || null,
+      level: p.accountLevel ?? null,
+      kills: st.kills ?? 0,
+      deaths: st.deaths ?? 0,
+      assists: st.assists ?? 0,
+      score: st.score ?? 0,
+      acs: rounds ? Math.round((st.score ?? 0) / rounds) : 0,
+      adr: rounds ? Math.round(sh.damage / rounds) : 0,
+      hsPercent: hits ? Math.round((sh.head / hits) * 100) : 0,
+    };
+  });
+
+  const me = players.find((p) => p.puuid === viewer) || null;
+
+  // Free-for-all modes give every player their own "team", so win/loss comes
+  // from the kill placement instead of a rounds comparison.
+  const ffa = teams.length > 2 || queueId === 'deathmatch';
+  let result = 'draw';
+  let scoreLine = null;
+  let placement = null;
+  if (ffa) {
+    const sorted = [...players].sort((a, b) => b.kills - a.kills);
+    const at = sorted.findIndex((p) => p.puuid === me?.puuid);
+    placement = at >= 0 ? at + 1 : null;
+    result = placement === 1 ? 'win' : 'lose';
+    scoreLine = me ? `#${placement || '-'}` : null;
+  } else {
+    const myTeam = teams.find((tm) => tm.id === me?.teamId);
+    const enemy = teams.find((tm) => tm.id !== me?.teamId);
+    if (myTeam && enemy) {
+      result = myTeam.roundsWon > enemy.roundsWon ? 'win' : myTeam.roundsWon < enemy.roundsWon ? 'lose' : 'draw';
+      scoreLine = `${myTeam.roundsWon}-${enemy.roundsWon}`;
+    }
+  }
+
+  const map = idx.maps[(info.mapId || '').toLowerCase()] || null;
+  return {
+    id: info.matchId || null,
+    map: map?.name || 'Unknown',
+    mapImage: map?.image || null,
+    mode: QUEUE_LABELS[queueId] ?? (info.gameMode || '').split('/').pop() ?? 'Custom',
+    queueId,
+    ranked: !!info.isRanked,
+    startedAt: info.gameStartMillis || null,
+    durationMs: info.gameLengthMillis || null,
+    result,
+    scoreLine,
+    placement,
+    ffa,
+    teams,
+    me,
+    players,
+  };
+}
+
+// Resolve a display name (+ rank when Riot allows it) for any puuid — used for
+// the header when browsing someone else's history.
+async function getPlayerBrief(headers, shard, puuid) {
+  const [nameData, mmr] = await Promise.all([
+    fetch(pdUrl(shard, '/name-service/v2/players'), { method: 'PUT', headers, body: JSON.stringify([puuid]) })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(pdUrl(shard, `/mmr/v1/players/${puuid}`), { headers })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+  const nm = Array.isArray(nameData) ? nameData[0] : null;
+  const gameName = nm?.GameName || null;
+  const tagLine = nm?.TagLine || null;
+  const tier = mmr?.LatestCompetitiveUpdate?.TierAfterUpdate || 0;
+  return {
+    puuid,
+    gameName,
+    tagLine,
+    displayName: gameName ? (tagLine ? `${gameName}#${tagLine}` : gameName) : null,
+    rank: tier ? await resolveRank(tier) : null,
+  };
+}
+
+// Run `fn` over `items` at most `limit` at a time. Match details are ~2 MB
+// each; firing a whole page at once risks blowing the Worker's memory ceiling.
+async function mapLimited(items, limit, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += limit) {
+    out.push(...(await Promise.all(items.slice(i, i + limit).map(fn))));
+  }
+  return out;
+}
+
 // --- public entry points ---------------------------------------------------
 // The daily store (+ night market when active) + wallet + identity.
 // Returns { status: 'ok', shop, nightMarket, wallet, profile } | { status: 'error', error }.
@@ -745,4 +1020,99 @@ export async function fetchInventoryDetail(tokens) {
       skins,
     },
   };
+}
+
+// A page of match history — your own account by default, or `puuid` for anyone
+// whose profile you opened from a scoreboard. Each entry is expanded through
+// match-details, so win/loss + KDA + ACS are ready to render; competitive RR
+// deltas are merged in when Riot exposes them.
+// Returns { status:'ok', player, total, startIndex, matches } | { status:'error', error }.
+export async function fetchMatchHistory(tokens, options = {}) {
+  const ctx = await prepare(tokens);
+  if (!ctx.ok) {
+    return { status: 'error', error: ctx.error === 'expired' ? 'Token sudah kadaluarsa. Login ulang lewat Riot.' : ctx.error };
+  }
+  const { headers, shard, puuid } = ctx;
+
+  const target = options.puuid ? String(options.puuid) : puuid;
+  if (!isRiotId(target)) return { status: 'error', error: 'PUUID tidak valid' };
+  const queue = options.queue ? String(options.queue).toLowerCase() : null;
+  if (queue && !(queue in QUEUE_LABELS)) return { status: 'error', error: 'Mode tidak dikenal' };
+  const startIndex = Math.max(0, Number(options.startIndex) || 0);
+  const count = Math.min(20, Math.max(1, Number(options.count) || 10));
+
+  const [{ total, entries }, player, maps, agents, tiers, rr] = await Promise.all([
+    getMatchHistory(headers, shard, target, { queue, startIndex, count }),
+    withTimeout(getPlayerBrief(headers, shard, target).catch(() => null), 8000, null),
+    getMapIndex(),
+    getAgentIndex(),
+    getTierIndex(),
+    startIndex === 0
+      ? withTimeout(getCompetitiveUpdates(headers, shard, target), 8000, {})
+      : Promise.resolve({}),
+  ]);
+
+  const idx = { maps, agents, tiers };
+  const matches = (
+    await mapLimited(entries, 4, async (e) => {
+      const raw = await getMatchDetails(headers, shard, e.MatchID);
+      // Detail can 404 for very old matches — keep the row, minus the stats.
+      if (!raw) {
+        return {
+          id: e.MatchID,
+          map: 'Unknown',
+          mapImage: null,
+          mode: QUEUE_LABELS[e.QueueID] ?? 'Custom',
+          queueId: e.QueueID || '',
+          startedAt: e.GameStartTime || null,
+          result: 'draw',
+          scoreLine: null,
+          me: null,
+          partial: true,
+        };
+      }
+      const m = buildMatch(raw, idx, target);
+      // The list only needs the viewer's own row; the full scoreboard comes
+      // from fetchMatchDetail() when a match is opened.
+      const { players, teams, ...summary } = m;
+      return {
+        ...summary,
+        id: summary.id || e.MatchID,
+        startedAt: summary.startedAt || e.GameStartTime || null,
+        rr: rr[e.MatchID] || null,
+      };
+    })
+  ).filter(Boolean);
+
+  return {
+    status: 'ok',
+    player: player || { puuid: target, displayName: null, rank: null },
+    isSelf: target === puuid,
+    total,
+    startIndex,
+    matches,
+  };
+}
+
+// One match's full scoreboard. `viewerPuuid` picks whose side the result is
+// reported from (defaults to the logged-in account).
+// Returns { status:'ok', match } | { status:'error', error }.
+export async function fetchMatchDetail(tokens, matchId, viewerPuuid) {
+  const ctx = await prepare(tokens);
+  if (!ctx.ok) {
+    return { status: 'error', error: ctx.error === 'expired' ? 'Token sudah kadaluarsa. Login ulang lewat Riot.' : ctx.error };
+  }
+  const { headers, shard, puuid } = ctx;
+  if (!isRiotId(matchId)) return { status: 'error', error: 'Match ID tidak valid' };
+  const viewer = isRiotId(viewerPuuid) ? String(viewerPuuid) : puuid;
+
+  const [raw, maps, agents, tiers] = await Promise.all([
+    getMatchDetails(headers, shard, String(matchId)),
+    getMapIndex(),
+    getAgentIndex(),
+    getTierIndex(),
+  ]);
+  if (!raw) return { status: 'error', error: 'Detail match tidak tersedia (mungkin sudah terlalu lama).' };
+
+  return { status: 'ok', match: buildMatch(raw, { maps, agents, tiers }, viewer) };
 }

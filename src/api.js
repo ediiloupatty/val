@@ -329,6 +329,65 @@ export async function fetchValorantInventory(ssid) {
 }
 
 /**
+ * Fetches a page of VALORANT match history. Pass `puuid` to browse another
+ * player's history (their id comes from a scoreboard), otherwise it's yours.
+ * The backend expands every row through match-details, so this is slow —
+ * generous timeout, small page size.
+ * Returns { ok: true, player, isSelf, total, startIndex, matches } | { ok: false, error }.
+ */
+export async function fetchValorantMatches(ssid, { puuid, queue, startIndex = 0, count = 10 } = {}) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/valorant/matches`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, puuid, queue, startIndex, count }),
+      },
+      45000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      return {
+        ok: true,
+        player: json.player,
+        isSelf: json.isSelf,
+        total: json.total,
+        startIndex: json.startIndex,
+        matches: json.matches || [],
+      };
+    }
+    return { ok: false, error: json.error || 'Gagal mengambil riwayat match' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
+ * Fetches one match's full scoreboard. `viewerPuuid` decides whose side the
+ * win/loss is reported from.
+ * Returns { ok: true, match } | { ok: false, error }.
+ */
+export async function fetchValorantMatch(ssid, matchId, viewerPuuid) {
+  try {
+    const res = await fetchWithTimeout(
+      `${API_URL}/api/valorant/match`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, matchId, viewerPuuid }),
+      },
+      30000
+    );
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) return { ok: true, match: json.match };
+    return { ok: false, error: json.error || 'Gagal mengambil detail match' };
+  } catch (err) {
+    return { ok: false, error: 'Tidak bisa terhubung ke server' };
+  }
+}
+
+/**
  * Fetches the weekly top-10 leaderboard (scores achieved in the last 7 days).
  * Returns an array (possibly empty) or null on failure.
  */

@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchShop, fetchValorantOverview, fetchValorantInventory } from './api.js';
+import {
+  fetchShop,
+  fetchValorantOverview,
+  fetchValorantInventory,
+  fetchValorantMatches,
+  fetchValorantMatch,
+} from './api.js';
 import { RIOT_LOGIN_URL, cleanSsid, saveSsid, loadSsid, clearSsid } from './riotSession.js';
 
 // VALORANT account hub. The user grabs their long-lived `ssid` cookie once; the
@@ -116,7 +122,7 @@ const HUB_TEXT = {
         browser ini untuk auto-login; hapus dengan tombol Logout.
       </>
     ),
-    tabs: { dashboard: 'Dashboard', inventory: 'Inventory', store: 'Toko', night: 'Night Market' },
+    tabs: { dashboard: 'Dashboard', inventory: 'Inventory', matches: 'Match', store: 'Toko', night: 'Night Market' },
     playerFallback: 'Pemain',
     welcomeBack: 'SELAMAT DATANG,',
     tagline: 'Main terus, kumpulkan gayamu.',
@@ -171,6 +177,27 @@ const HUB_TEXT = {
       </>
     ),
     nightInactive: 'Night Market sedang tidak aktif.',
+    matchTitle: 'Riwayat Match',
+    matchAllModes: 'Semua',
+    matchEmpty: 'Belum ada match untuk mode ini.',
+    matchLoadMore: 'Muat lebih banyak',
+    matchLoadingMore: 'Memuat…',
+    matchShown: (shown, total) => `${shown} dari ${total} match`,
+    matchWin: 'Menang',
+    matchLose: 'Kalah',
+    matchDraw: 'Seri',
+    matchKda: 'K/D/A',
+    matchAcs: 'ACS',
+    matchAdr: 'ADR',
+    matchHs: 'HS%',
+    matchPlayer: 'Pemain',
+    matchScoreboard: 'Scoreboard',
+    matchClose: 'Tutup',
+    matchPartial: 'Detail match ini sudah tidak tersedia di server Riot.',
+    matchTeamYours: 'Tim Kamu',
+    matchTeamEnemy: 'Lawan',
+    matchPlacement: (n) => `Peringkat #${n}`,
+    matchUnranked: 'Unranked',
   },
   en: {
     back: 'Back',
@@ -207,7 +234,7 @@ const HUB_TEXT = {
         stored only in this browser for auto-login; remove it with the Logout button.
       </>
     ),
-    tabs: { dashboard: 'Dashboard', inventory: 'Inventory', store: 'Store', night: 'Night Market' },
+    tabs: { dashboard: 'Dashboard', inventory: 'Inventory', matches: 'Matches', store: 'Store', night: 'Night Market' },
     playerFallback: 'Player',
     welcomeBack: 'WELCOME BACK,',
     tagline: 'Play more, earn more, collect your style.',
@@ -262,6 +289,27 @@ const HUB_TEXT = {
       </>
     ),
     nightInactive: 'Night Market is currently inactive.',
+    matchTitle: 'Match History',
+    matchAllModes: 'All',
+    matchEmpty: 'No matches yet for this mode.',
+    matchLoadMore: 'Load more',
+    matchLoadingMore: 'Loading…',
+    matchShown: (shown, total) => `${shown} of ${total} matches`,
+    matchWin: 'Victory',
+    matchLose: 'Defeat',
+    matchDraw: 'Draw',
+    matchKda: 'K/D/A',
+    matchAcs: 'ACS',
+    matchAdr: 'ADR',
+    matchHs: 'HS%',
+    matchPlayer: 'Player',
+    matchScoreboard: 'Scoreboard',
+    matchClose: 'Close',
+    matchPartial: "Riot no longer serves the details for this match.",
+    matchTeamYours: 'Your Team',
+    matchTeamEnemy: 'Enemy',
+    matchPlacement: (n) => `Placement #${n}`,
+    matchUnranked: 'Unranked',
   },
 };
 
@@ -432,6 +480,7 @@ function HubNav({ t, identity, walletVp, tab, goTab, onExit, onLogout }) {
   const tabs = [
     ['dashboard', t.tabs.dashboard],
     ['inventory', t.tabs.inventory],
+    ['matches', t.tabs.matches],
     ['store', t.tabs.store],
     ['night', t.tabs.night],
   ];
@@ -842,13 +891,363 @@ function Spinner() {
   );
 }
 
+// ---------- Match history ----------
+
+// Queue filter chips. The empty key means "no queue param" (every mode); the
+// rest must stay in sync with QUEUE_LABELS in riot.js — the Worker rejects
+// anything it doesn't recognise.
+const MATCH_QUEUES = [
+  ['competitive', 'Competitive'],
+  ['unrated', 'Unrated'],
+  ['swiftplay', 'Swiftplay'],
+  ['spikerush', 'Spike Rush'],
+  ['deathmatch', 'Deathmatch'],
+  ['hurm', 'Team Deathmatch'],
+  ['premier', 'Premier'],
+];
+
+const MATCH_PAGE = 10;
+
+const RESULT_STYLE = {
+  win: { bar: 'bg-val-accent', text: 'text-val-accent', border: 'border-val-accent/25' },
+  lose: { bar: 'bg-val-red', text: 'text-val-red', border: 'border-val-red/25' },
+  draw: { bar: 'bg-slate-500', text: 'text-slate-400', border: 'border-white/10' },
+};
+
+// "3 jam lalu" / "3 hours ago" — falls back to a plain date past a month.
+function fmtAgo(ms, lang) {
+  const at = Number(ms) || 0;
+  if (!at) return '-';
+  const locale = lang === 'en' ? 'en' : 'id';
+  const mins = Math.round((Date.now() - at) / 60000);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (mins < 60) return rtf.format(-Math.max(1, mins), 'minute');
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  const days = Math.round(hours / 24);
+  if (days <= 30) return rtf.format(-days, 'day');
+  return new Date(at).toLocaleDateString(lang === 'en' ? 'en-GB' : 'id-ID');
+}
+
+function fmtMatchLength(ms) {
+  const mins = Math.round((Number(ms) || 0) / 60000);
+  if (!mins) return null;
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+}
+
+// One stat column inside a match row (desktop only).
+function MatchStat({ label, value }) {
+  return (
+    <div className="w-12 text-center">
+      <p className="text-sm font-black tabular-nums text-white">{value}</p>
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+// One row in the history list: result stripe, map art washed into the
+// background, the viewer's agent + KDA, and the round score. Opens the full
+// scoreboard on click.
+function MatchRow({ match, t, lang, onOpen }) {
+  const s = RESULT_STYLE[match.result] || RESULT_STYLE.draw;
+  const me = match.me;
+  const label = match.result === 'win' ? t.matchWin : match.result === 'lose' ? t.matchLose : t.matchDraw;
+  const rrChange = match.rr?.rrChange;
+  const length = fmtMatchLength(match.durationMs);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(match)}
+      className={`group relative flex w-full overflow-hidden rounded-2xl border bg-val-panel text-left transition-transform hover:-translate-y-0.5 ${s.border}`}
+    >
+      <span className={`w-1 shrink-0 ${s.bar}`} />
+      {match.mapImage && (
+        <img
+          src={match.mapImage}
+          alt=""
+          loading="lazy"
+          className="pointer-events-none absolute inset-y-0 right-0 h-full w-2/3 object-cover opacity-[0.18] [mask-image:linear-gradient(90deg,transparent,black_80%)]"
+        />
+      )}
+      <div className="relative flex min-w-0 flex-1 items-center gap-3 p-3 sm:gap-4 sm:p-4">
+        {me?.agentIcon ? (
+          <img src={me.agentIcon} alt={me.agent || ''} loading="lazy" className="h-10 w-10 shrink-0 rounded-lg object-cover sm:h-12 sm:w-12" />
+        ) : (
+          <span className="h-10 w-10 shrink-0 rounded-lg bg-white/5 sm:h-12 sm:w-12" />
+        )}
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black uppercase tracking-wide text-white sm:text-base">{match.map}</p>
+          <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            {match.mode} · {fmtAgo(match.startedAt, lang)}
+            {length ? ` · ${length}` : ''}
+          </p>
+          {me && (
+            <p className="mt-1 text-[11px] font-black tabular-nums text-slate-300 sm:hidden">
+              {me.kills}/{me.deaths}/{me.assists} · {me.acs} {t.matchAcs}
+            </p>
+          )}
+        </div>
+
+        {me && (
+          <div className="hidden shrink-0 items-center gap-3 sm:flex lg:gap-5">
+            <MatchStat label={t.matchKda} value={`${me.kills}/${me.deaths}/${me.assists}`} />
+            <MatchStat label={t.matchAcs} value={me.acs} />
+            <MatchStat label={t.matchAdr} value={me.adr} />
+            <MatchStat label={t.matchHs} value={`${me.hsPercent}%`} />
+          </div>
+        )}
+
+        <div className="shrink-0 text-right">
+          <p className={`text-[10px] font-black uppercase tracking-[0.15em] ${s.text}`}>{label}</p>
+          <p className="text-lg font-black tabular-nums text-white sm:text-xl">{match.scoreLine || '—'}</p>
+          {rrChange != null && (
+            <p className={`text-[10px] font-black tabular-nums ${rrChange >= 0 ? 'text-val-accent' : 'text-val-red'}`}>
+              {rrChange >= 0 ? '+' : ''}{rrChange} RR
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Scoreboard table for one team (or the whole lobby in free-for-all modes).
+// The viewer's own row is tinted so it's findable at a glance.
+function ScoreboardTable({ players, viewer, t }) {
+  const cell = 'px-2 py-2 text-right font-black tabular-nums';
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[540px] border-collapse text-xs">
+        <thead>
+          <tr className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+            <th className="px-2 py-2 text-left">{t.matchPlayer}</th>
+            <th className="px-2 py-2 text-right">{t.matchAcs}</th>
+            <th className="px-2 py-2 text-right">K</th>
+            <th className="px-2 py-2 text-right">D</th>
+            <th className="px-2 py-2 text-right">A</th>
+            <th className="px-2 py-2 text-right">{t.matchAdr}</th>
+            <th className="px-2 py-2 text-right">{t.matchHs}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {players.map((p) => (
+            <tr key={p.puuid} className={p.puuid === viewer ? 'bg-val-accent/[0.08]' : ''}>
+              <td className="px-2 py-2">
+                <div className="flex items-center gap-2">
+                  {p.agentIcon ? (
+                    <img src={p.agentIcon} alt={p.agent || ''} loading="lazy" className="h-7 w-7 shrink-0 rounded object-cover" />
+                  ) : (
+                    <span className="h-7 w-7 shrink-0 rounded bg-white/5" />
+                  )}
+                  <span className="min-w-0">
+                    <span className="block max-w-[8.5rem] truncate text-xs font-bold text-white sm:max-w-[12rem]">{p.name}</span>
+                    <span className="flex items-center gap-1">
+                      {p.rank?.icon && <img src={p.rank.icon} alt="" className="h-3 w-3" />}
+                      <span
+                        className="text-[9px] font-bold uppercase tracking-wider text-slate-500"
+                        style={p.rank?.color ? { color: p.rank.color } : undefined}
+                      >
+                        {p.rank?.name || t.matchUnranked}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+              </td>
+              <td className={`${cell} text-white`}>{p.acs}</td>
+              <td className={`${cell} text-white`}>{p.kills}</td>
+              <td className={`${cell} text-slate-400`}>{p.deaths}</td>
+              <td className={`${cell} text-slate-400`}>{p.assists}</td>
+              <td className={`${cell} text-white`}>{p.adr}</td>
+              <td className={`${cell} text-slate-400`}>{p.hsPercent}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Full-screen scoreboard for one match. `summary` is the list row that was
+// clicked, so the header can render instantly while the detail request runs.
+function MatchModal({ state, viewer, t, lang, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!state) return null;
+  const { loading, error, match, summary } = state;
+  const head = match || summary || {};
+  const s = RESULT_STYLE[head.result] || RESULT_STYLE.draw;
+  const label = head.result === 'win' ? t.matchWin : head.result === 'lose' ? t.matchLose : t.matchDraw;
+  const me = match?.me || summary?.me || null;
+
+  // Team-based modes split into ally/enemy; free-for-all is one ranked list.
+  let groups = [];
+  if (match?.players?.length) {
+    const sortByAcs = (a, b) => b.acs - a.acs;
+    if (match.ffa) {
+      groups = [[null, [...match.players].sort((a, b) => b.kills - a.kills)]];
+    } else {
+      const allyId = me?.teamId ?? match.teams?.[0]?.id;
+      groups = [
+        [t.matchTeamYours, match.players.filter((p) => p.teamId === allyId).sort(sortByAcs)],
+        [t.matchTeamEnemy, match.players.filter((p) => p.teamId !== allyId).sort(sortByAcs)],
+      ].filter(([, list]) => list.length);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-auto w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-val-dark shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header: map art banner + result */}
+        <div className="relative overflow-hidden border-b border-white/10 bg-val-panel p-5 sm:p-6">
+          {head.mapImage && (
+            <img
+              src={head.mapImage}
+              alt=""
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-25 [mask-image:linear-gradient(90deg,transparent,black)]"
+            />
+          )}
+          <div className="relative flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className={`text-[10px] font-black uppercase tracking-[0.25em] ${s.text}`}>{label}</p>
+              <h3 className="mt-1 truncate text-2xl font-black uppercase tracking-wide text-white sm:text-3xl">
+                {head.map || '—'}
+              </h3>
+              <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                {head.mode} · {fmtAgo(head.startedAt, lang)}
+                {fmtMatchLength(head.durationMs) ? ` · ${fmtMatchLength(head.durationMs)}` : ''}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-3xl font-black tabular-nums text-white sm:text-4xl">{head.scoreLine || '—'}</p>
+              {head.placement != null && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {t.matchPlacement(head.placement)}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.matchClose}
+            className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm text-slate-300 transition-colors hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-y-auto p-4 sm:p-5">
+          {loading && <Spinner />}
+          {error && <p className="py-6 text-center text-sm font-semibold text-val-red">{error}</p>}
+          {!loading && !error && groups.map(([teamLabel, list], i) => (
+            <div key={teamLabel || i} className={i ? 'mt-5' : ''}>
+              {teamLabel && <SectionLabel>{teamLabel}</SectionLabel>}
+              <div className="mt-2 rounded-2xl border border-white/10 bg-val-panel p-1.5">
+                <ScoreboardTable players={list} viewer={viewer} t={t} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Matches view: player header, queue filter chips, the row list, and a
+// load-more button that appends the next page.
+function MatchesView({ matches, player, total, queue, loading, loadingMore, error, t, lang, onQueue, onMore, onOpen }) {
+  const chip = (key, label) => (
+    <button
+      key={key || 'all'}
+      type="button"
+      onClick={() => onQueue(key)}
+      className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition-colors ${
+        queue === key
+          ? 'border-val-red bg-val-red/15 text-val-red'
+          : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const shown = matches?.length || 0;
+  const hasMore = shown > 0 && (total ? shown < total : shown % MATCH_PAGE === 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-black uppercase tracking-wide sm:text-2xl">{t.matchTitle}</h2>
+          {player?.displayName && (
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              {player.rank?.icon && <img src={player.rank.icon} alt="" className="h-4 w-4" />}
+              <span style={player.rank?.color ? { color: player.rank.color } : undefined}>
+                {player.rank?.name || t.matchUnranked}
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="truncate">{player.displayName}</span>
+            </p>
+          )}
+        </div>
+        {shown > 0 && total > 0 && (
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t.matchShown(shown, total)}</p>
+        )}
+      </div>
+
+      <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {chip('', t.matchAllModes)}
+        {MATCH_QUEUES.map(([key, label]) => chip(key, label))}
+      </div>
+
+      {error && <p className="text-sm font-semibold text-val-red">{error}</p>}
+      {loading && <Spinner />}
+
+      {!loading && shown === 0 && !error && (
+        <div className="rounded-2xl border border-white/10 bg-val-panel p-6 text-center text-slate-400">{t.matchEmpty}</div>
+      )}
+
+      {shown > 0 && (
+        <div className="flex flex-col gap-2.5">
+          {matches.map((m) => (
+            <MatchRow key={m.id} match={m} t={t} lang={lang} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
+
+      {hasMore && !loading && (
+        <button
+          type="button"
+          onClick={onMore}
+          disabled={loadingMore}
+          className="mx-auto rounded-xl border border-white/10 bg-white/5 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+        >
+          {loadingMore ? t.matchLoadingMore : t.matchLoadMore}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' }) {
   const t = HUB_TEXT[lang] || HUB_TEXT.id;
   const [session, setSession] = useState(() => loadSsid()); // ssid string or null
   const [ssidInput, setSsidInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'inventory' | 'store' | 'night'
+  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'inventory' | 'matches' | 'store' | 'night'
 
   const [overview, setOverview] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -862,12 +1261,31 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState('');
 
+  const [matches, setMatches] = useState(null);      // array of history rows
+  const [matchPlayer, setMatchPlayer] = useState(null);
+  const [matchTotal, setMatchTotal] = useState(0);
+  const [matchQueue, setMatchQueue] = useState(''); // '' = every mode
+  const [matchesLoading, setMatchesLoading] = useState(false);
+  const [matchesMore, setMatchesMore] = useState(false);
+  const [matchesError, setMatchesError] = useState('');
+  const [detail, setDetail] = useState(null); // { loading, error, match, summary }
+
+  const resetMatches = () => {
+    setMatches(null);
+    setMatchPlayer(null);
+    setMatchTotal(0);
+    setMatchQueue('');
+    setMatchesError('');
+    setDetail(null);
+  };
+
   const doLogout = () => {
     clearSsid();
     setSession(null);
     setOverview(null);
     setStore(null);
     setInventory(null);
+    resetMatches();
     setTab('dashboard');
     setSsidInput('');
     onLogout?.();
@@ -879,6 +1297,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     setOverview(null);
     setStore(null);
     setInventory(null);
+    resetMatches();
     setLoginError(t.sessionExpired);
   };
 
@@ -939,10 +1358,62 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     setInventory(res.inventory);
   };
 
+  // Match history is paginated: `startIndex` 0 replaces the list, anything
+  // higher appends. The queue is passed explicitly because the chip handler
+  // fires before its state update lands.
+  const loadMatches = async (queue = matchQueue, startIndex = 0) => {
+    if (!session) return;
+    if (startIndex === 0) {
+      setMatchesLoading(true);
+      setMatches(null);
+    } else {
+      setMatchesMore(true);
+    }
+    setMatchesError('');
+    const res = await fetchValorantMatches(session, {
+      queue: queue || undefined,
+      startIndex,
+      count: MATCH_PAGE,
+    });
+    setMatchesLoading(false);
+    setMatchesMore(false);
+    if (!res.ok) {
+      if (isExpiredError(res.error)) return handleExpired();
+      setMatchesError(res.error);
+      return;
+    }
+    setMatchPlayer(res.player);
+    setMatchTotal(res.total || 0);
+    setMatches((prev) => (startIndex === 0 ? res.matches : [...(prev || []), ...res.matches]));
+  };
+
+  const changeMatchQueue = (queue) => {
+    if (queue === matchQueue) return;
+    setMatchQueue(queue);
+    loadMatches(queue, 0);
+  };
+
+  // The list row already carries everything the modal header needs, so the
+  // scoreboard opens instantly and fills in when the detail request lands.
+  const openMatch = async (summary) => {
+    if (!summary?.id || summary.partial) {
+      setDetail({ loading: false, error: summary?.partial ? t.matchPartial : '', match: null, summary });
+      return;
+    }
+    setDetail({ loading: true, error: '', match: null, summary });
+    const res = await fetchValorantMatch(session, summary.id, matchPlayer?.puuid);
+    setDetail((d) =>
+      d && d.summary?.id === summary.id
+        ? { ...d, loading: false, error: res.ok ? '' : res.error, match: res.ok ? res.match : null }
+        : d
+    );
+  };
+
   const goTab = (next) => {
     setTab(next);
     if (next === 'store' || next === 'night') loadStore();
     if (next === 'inventory') loadInventory();
+    if (next === 'matches' && !matches && !matchesLoading) loadMatches(matchQueue, 0);
   };
 
   const handleLogin = (e) => {
@@ -1240,6 +1711,24 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
               </>
             )}
 
+            {/* Match history */}
+            {tab === 'matches' && (
+              <MatchesView
+                matches={matches}
+                player={matchPlayer}
+                total={matchTotal}
+                queue={matchQueue}
+                loading={matchesLoading}
+                loadingMore={matchesMore}
+                error={matchesError}
+                t={t}
+                lang={lang}
+                onQueue={changeMatchQueue}
+                onMore={() => loadMatches(matchQueue, matches?.length || 0)}
+                onOpen={openMatch}
+              />
+            )}
+
             {/* Store */}
             {tab === 'store' && (
               <>
@@ -1268,6 +1757,16 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
           </div>
         )}
       </div>
+
+      {detail && (
+        <MatchModal
+          state={detail}
+          viewer={matchPlayer?.puuid}
+          t={t}
+          lang={lang}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </div>
   );
 }
