@@ -1,8 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT } from './translations.js';
 import { fetchLeaderboard, fetchRank, fetchDonations, fetchBackgrounds } from './api.js';
-import { generateShareCard, CARD_TEMPLATES } from './shareCard.js';
 import { loadSettings, saveSettings, loadMuted, saveMuted, TARGET_COLORS } from './settings.js';
+
+// The trainer's weapon model is 1.5 MB and only the arena uses it. Warmed the
+// moment the pointer reaches PLAY, which buys the download a head start without
+// charging every visitor who never leaves the landing page. Idempotent: repeated
+// hovers reuse the one <link> already in the document.
+let trainerAssetsWarmed = false;
+function warmTrainerAssets() {
+  if (trainerAssetsWarmed) return;
+  trainerAssetsWarmed = true;
+  const link = document.createElement('link');
+  link.rel = 'prefetch';
+  link.as = 'fetch';
+  link.crossOrigin = 'anonymous';
+  link.href = '/models/colt_navy_1851.glb';
+  document.head.appendChild(link);
+}
 
 // Leaderboard mode filter: [mode key, translation key]. 'all' = overall board.
 const LB_MODE_TABS = [
@@ -77,6 +92,9 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   const [shareBlob, setShareBlob] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [template, setTemplate] = useState('neon');
+  // Filled from the lazily-loaded card module; the picker it feeds only exists
+  // inside the share panel, which can't open before that module has landed.
+  const [cardTemplates, setCardTemplates] = useState([]);
   const [showRank, setShowRank] = useState(true);
   const [rank, setRank] = useState(null);
   const t = TEXT[lang] || TEXT.en;
@@ -202,7 +220,11 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   };
 
   // Render the score card for a given template + rank into the preview state.
+  // The card generator is a canvas renderer nobody needs until the share panel
+  // opens, so it loads on demand instead of riding along in the landing chunk.
   const renderCard = async (tpl, rankVal) => {
+    const { generateShareCard, CARD_TEMPLATES } = await import('./shareCard.js');
+    setCardTemplates(CARD_TEMPLATES);
     const blob = await generateShareCard({
       name,
       score: best.score,
@@ -470,6 +492,9 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         {/* PLAY — highlighted card with accent border/glow. */}
         <button
           onClick={isMobile ? () => setShowMobileModal(true) : onPlay}
+          onPointerEnter={warmTrainerAssets}
+          onFocus={warmTrainerAssets}
+          onTouchStart={warmTrainerAssets}
           className="group flex items-center gap-4 rounded-2xl border border-val-accent/50 bg-black/40 px-5 py-4 text-left shadow-[0_0_22px_rgba(0,229,192,0.22)] backdrop-blur-sm transition-all hover:border-val-accent/80 hover:bg-black/50 hover:shadow-[0_0_30px_rgba(0,229,192,0.35)]"
         >
           <PlayIcon className="h-6 w-6 shrink-0 text-val-accent transition-transform group-hover:scale-110" />
@@ -626,7 +651,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
 
           {/* Template picker — minimal underline tabs */}
           <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2.5">
-            {CARD_TEMPLATES.map((tpl) => (
+            {cardTemplates.map((tpl) => (
               <button
                 key={tpl.id}
                 onClick={() => handleSelectTemplate(tpl.id)}
