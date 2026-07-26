@@ -26,15 +26,68 @@ const LB_MODE_TABS = [
   ['strafe', 'lbModeStrafe'],
 ];
 
-// Static landing background — poster/fallback while the video loads, and the
-// permanent background on mobile / data-saver connections.
-const BG_URL = '/img/jett-background.webp';
-
 // Video background: mp4/webm files uploaded manually to the R2 bucket (same
 // bucket the wallpapers lived in — `wrangler r2 object put`). One video is
 // picked deterministically per day. Desktop + decent connection only — mobile
-// and slow connections keep the lightweight wallpaper.
+// and slow connections get a wallpaper from the same bucket instead.
 const VIDEO_BG = true;
+
+// How long the skeleton is allowed to hold the page back. The video is fully
+// downloaded before the landing appears, but a stalled or very slow connection
+// must not strand the visitor on a skeleton forever — past this the page opens
+// and the video fades in whenever it finishes.
+const BG_LOAD_TIMEOUT_MS = 20000;
+
+// True when this visit will wait on a video at all. Mobile, data-saver and 2G
+// never download one, so they must not see the loading gate.
+function willLoadVideo(isMobile) {
+  if (!VIDEO_BG || isMobile) return false;
+  const conn = typeof navigator !== 'undefined' ? navigator.connection : null;
+  if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return false;
+  return true;
+}
+
+// Loading gate. Mirrors the landing's real layout — logo, menu column, profile
+// chip — so nothing jumps when the page swaps in. Skeleton rather than a
+// spinner: it reads as "the page is arriving", not "something is stuck".
+function LandingSkeleton({ progress }) {
+  const block = 'animate-pulse rounded bg-white/5';
+  return (
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark" role="status" aria-label="Loading">
+      <div className="absolute left-0 right-0 top-0 flex items-center justify-between gap-3 px-6 py-4 md:px-12 md:py-5">
+        <div className="flex items-center gap-2.5 md:gap-3">
+          <div className={`h-9 w-9 rounded-2xl md:h-11 md:w-11 ${block}`} />
+          <div className="flex flex-col gap-1.5">
+            <div className={`h-3.5 w-24 ${block}`} />
+            <div className={`h-2 w-36 ${block}`} />
+          </div>
+        </div>
+        <div className={`h-10 w-32 rounded-2xl md:w-44 ${block}`} />
+      </div>
+
+      <div className="absolute left-6 top-1/2 flex w-60 -translate-y-1/2 flex-col gap-1.5 md:left-12 md:w-64">
+        <div className={`h-[70px] rounded-2xl ${block}`} />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className={`h-12 rounded-xl ${block}`} />
+        ))}
+      </div>
+
+      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-2 md:bottom-8 md:right-12">
+        <div className={`h-3 w-28 ${block}`} />
+        <div className={`h-3 w-20 ${block}`} />
+      </div>
+
+      {/* Hairline progress along the bottom edge — honest feedback on a long
+          download without turning the skeleton into a loading screen. */}
+      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/5">
+        <div
+          className="h-full bg-val-accent transition-[width] duration-200 ease-out"
+          style={{ width: `${Math.max(2, progress)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
 // on every visit until this moment, then never appears again. Bump this date to
@@ -70,10 +123,16 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [headerRank, setHeaderRank] = useState(null); // { rank, score } for the header profile card
   const [donations, setDonations] = useState([]); // recent Saweria supporters
-  // R2-hosted video background (desktop only). Fades in over the wallpaper
-  // once it's actually playing; null = image background only.
+  // R2-hosted video background (desktop only), held as a blob URL once fully
+  // downloaded; null = no video this visit.
   const [videoUrl, setVideoUrl] = useState(null);
   const [videoReady, setVideoReady] = useState(false);
+  // R2 wallpaper used where a video isn't downloaded (mobile / data-saver).
+  const [posterUrl, setPosterUrl] = useState(null);
+  // The landing stays behind the skeleton until its background is in hand.
+  // Visits that never fetch a video skip the gate entirely.
+  const [bgReady, setBgReady] = useState(() => !willLoadVideo(isMobile));
+  const [bgProgress, setBgProgress] = useState(0);
   // Landing announcement banner: shows until NOTICE_EXPIRY, then auto-hides for
   // everyone. Clicking ✕ dismisses it for good on this device — we remember the
   // dismissed banner by its expiry, so a future announcement (new NOTICE_EXPIRY)
@@ -342,27 +401,86 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
     });
   }, [deviceId]);
 
-  // "Video of the day": list the manually-uploaded videos in the R2 bucket and
-  // pick one deterministically per day. Deferred past first paint, and skipped
-  // entirely on mobile, data-saver, or slow connections — those keep the
-  // lightweight static wallpaper.
+  // "Background of the day": list what's in the R2 bucket and pick one entry
+  // deterministically per day. Desktop downloads the whole video before the
+  // landing is revealed, streaming it through a reader so the skeleton can show
+  // real progress; mobile and data-saver take a wallpaper from the same bucket
+  // and never wait.
   useEffect(() => {
-    if (!VIDEO_BG || isMobile) return;
-    const conn = navigator.connection;
-    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
     let alive = true;
-    const timer = setTimeout(() => {
-      fetchBackgrounds().then((files) => {
-        const vids = files.filter((u) => /\.(mp4|webm)(\?|$)/i.test(u));
-        if (!alive || !vids.length) return;
-        const idx = Math.floor(Date.now() / 86400000) % vids.length;
-        setVideoUrl(vids[idx]);
-      });
-    }, 1200);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [isMobile]);
+    let objectUrl = null;
+    const wantsVideo = willLoadVideo(isMobile);
+
+    // Safety net: reveal the page regardless once the budget is spent.
+    const failsafe = wantsVideo
+      ? setTimeout(() => { if (alive) setBgReady(true); }, BG_LOAD_TIMEOUT_MS)
+      : null;
+
+    (async () => {
+      const files = await fetchBackgrounds();
+      if (!alive) return;
+      const pick = (list) => list[Math.floor(Date.now() / 86400000) % list.length];
+
+      if (!wantsVideo) {
+        const stills = files.filter((u) => /\.(webp|jpe?g|png)(\?|$)/i.test(u));
+        if (stills.length) setPosterUrl(pick(stills));
+        setBgReady(true);
+        return;
+      }
+
+      const images = files.filter((u) => /\.(webp|jpe?g|png)(\?|$)/i.test(u));
+      const vids = files.filter((u) => /\.(mp4|webm)(\?|$)/i.test(u));
+      if (!vids.length) {
+        if (images.length) setPosterUrl(pick(images));
+        setBgReady(true);
+        return;
+      }
+
+      try {
+        const res = await fetch(pick(vids));
+        if (!res.ok || !res.body) throw new Error('bg fetch failed');
+        const total = Number(res.headers.get('Content-Length')) || 0;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!alive) return reader.cancel();
+          chunks.push(value);
+          received += value.length;
+          // Held below 100 until the blob exists, so the bar can't read
+          // "finished" while the page is still assembling.
+          if (total) setBgProgress(Math.min(99, Math.round((received / total) * 100)));
+        }
+        objectUrl = URL.createObjectURL(new Blob(chunks, { type: res.headers.get('Content-Type') || 'video/mp4' }));
+        if (!alive) return URL.revokeObjectURL(objectUrl);
+        setBgProgress(100);
+        setVideoUrl(objectUrl);
+      } catch {
+        // Video unavailable — open the landing on a wallpaper rather than on
+        // an empty dark page.
+        if (alive && images.length) setPosterUrl(pick(images));
+      }
+      if (alive) setBgReady(true);
+    })();
+
+    return () => {
+      alive = false;
+      if (failsafe) clearTimeout(failsafe);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // Deliberately mount-only. `isMobile` flips whenever a resize crosses the
+    // breakpoint, and re-running would revoke the blob URL the <video> is
+    // playing from — the background would blank and download all over again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const formatRp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`;
+
+  // Every hook above this line runs on both paths — the gate is the last thing
+  // before the tree, so it can't change the hook order.
+  if (!bgReady) return <LandingSkeleton progress={bgProgress} />;
 
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none">
@@ -390,7 +508,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         <p>Tidak. AIMKU berjalan langsung di browser komputer maupun HP, jadi tidak perlu download seperti Aimlab atau Kovaak.</p>
       </section>
 
-      {/* ---- Parallax background image — shifts with mouse (3D depth illusion) ---- */}
+      {/* ---- Parallax background — shifts with mouse (3D depth illusion) ---- */}
       <div
         ref={bgRef}
         aria-hidden="true"
@@ -398,15 +516,17 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         style={{
           // Oversized by 12% on each side so the translate never reveals a gap.
           inset: '-8%',
-          backgroundImage: `url('${BG_URL}')`,
+          // Only the no-video path paints a wallpaper here; when a video is
+          // downloaded it arrives complete, so there is nothing to cover.
+          backgroundImage: posterUrl ? `url('${posterUrl}')` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center right',
           willChange: 'transform',
         }}
       >
-        {/* Background video (manually uploaded to R2), fading in over the
-            wallpaper once it actually plays. Lives inside the parallax layer so
-            it shifts with the mouse just like the image. */}
+        {/* Background video (manually uploaded to R2), already fully downloaded
+            by the time this renders. Lives inside the parallax layer so it
+            shifts with the mouse. */}
         {videoUrl && (
           <video
             src={videoUrl}

@@ -18,7 +18,7 @@
     <meta property="og:description" content="Free browser-based aim trainer inspired by Valorant. Train micro flicks, wide flicks, reflex pop, and gridshot - no download needed." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://aimku.xyz" />
-    <meta property="og:image" content="https://aimku.xyz/img/jett-background.webp" />
+    <meta property="og:image" content="https://valorant-aim-trainer-backend.ediloupatty.workers.dev/api/bg/zhranx15-01.webp" />
     <meta property="og:image:width" content="1920" />
     <meta property="og:image:height" content="1080" />
     <meta property="og:image:alt" content="AIMKU - Valorant-style browser aim trainer" />
@@ -29,17 +29,20 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="AIMKU - Aim Trainer" />
     <meta name="twitter:description" content="Free browser-based aim trainer inspired by Valorant. No download needed." />
-    <meta name="twitter:image" content="https://aimku.xyz/img/jett-background.webp" />
+    <meta name="twitter:image" content="https://valorant-aim-trainer-backend.ediloupatty.workers.dev/api/bg/zhranx15-01.webp" />
 
     <!-- Asset preloading for critical resources -->
-    <!-- The landing background is now the static Jett poster (videos stream from
-         R2 after first paint), so preload that. Also drop the stale cache key
-         left behind by the old rotating-wallpaper system. -->
+    <!-- The landing background comes from R2 now (video on desktop, wallpaper
+         elsewhere), so there is no local image left to preload. Also drop the
+         stale cache key left behind by the old rotating-wallpaper system. -->
     <script>
       try { localStorage.removeItem('vat_bg_cache'); } catch (e) { /* ignore */ }
     </script>
-    <link rel="preload" href="/img/jett-background.webp" as="image" type="image/webp" />
     <link rel="preload" href="/img/app-icon.png" as="image" type="image/png" />
+    <!-- Warm the connection the background is fetched over: the landing can't
+         render until that download lands, so the handshake shouldn't wait for
+         the JS bundle to run first. -->
+    <link rel="preconnect" href="https://valorant-aim-trainer-backend.ediloupatty.workers.dev" crossorigin>
     <!-- The 1.5 MB weapon model is only needed inside the trainer, so it is no
          longer prefetched here — every visitor paid for it, most never pressed
          PLAY. Landing warms it on hover/touch of the PLAY button instead. -->
