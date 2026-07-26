@@ -122,6 +122,14 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       return false;
     }
   });
+  // The FPS readout is diagnostic, not gameplay: off unless the player asks for
+  // it, and it surfaces on its own whenever the frame rate actually drops. The
+  // number itself is written straight to the DOM once a second (see onFps), so
+  // React only tracks the one bit that decides whether the badge exists at all.
+  // Declared up here with the other persisted settings — the debounced save
+  // effect below lists it as a dependency, and that array is evaluated during
+  // render, so a later `const` would be read in its temporal dead zone.
+  const [showFps, setShowFps] = useState(() => !!loadSettings().showFps);
   const t = TEXT[lang] || TEXT.en;
   const modeText = (MODE_TEXT[lang] || MODE_TEXT.en)[modeKey] || MODE_TEXT.en.micro;
 
@@ -171,11 +179,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const [hits, setHits] = useState(0);
   const [misses, setMisses] = useState(0);
   const [avgRt, setAvgRt] = useState(0); // avg split time between consecutive hits (ms)
-  // The FPS readout is diagnostic, not gameplay: off unless the player asks for
-  // it, and it surfaces on its own whenever the frame rate actually drops. The
-  // number itself is written straight to the DOM once a second (see onFps), so
-  // React only tracks the one bit that decides whether the badge exists at all.
-  const [showFps, setShowFps] = useState(() => !!loadSettings().showFps);
   const [fpsLow, setFpsLow] = useState(false);
   const fpsRef = useRef(0);
   // The setup panel opens on the choices that matter (mode, start); tuning is
