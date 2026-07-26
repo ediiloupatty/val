@@ -198,6 +198,10 @@ const HUB_TEXT = {
     matchTeamEnemy: 'Lawan',
     matchPlacement: (n) => `Peringkat #${n}`,
     matchUnranked: 'Unranked',
+    matchViewProfile: 'Lihat riwayat pemain ini',
+    matchBackToMine: '← Riwayat saya',
+    matchViewingOther: 'Melihat pemain lain',
+    matchOtherEmpty: 'Riot membatasi riwayat match akun lain, jadi data pemain ini bisa saja kosong.',
   },
   en: {
     back: 'Back',
@@ -310,6 +314,10 @@ const HUB_TEXT = {
     matchTeamEnemy: 'Enemy',
     matchPlacement: (n) => `Placement #${n}`,
     matchUnranked: 'Unranked',
+    matchViewProfile: "View this player's history",
+    matchBackToMine: '← My history',
+    matchViewingOther: 'Viewing another player',
+    matchOtherEmpty: "Riot restricts other accounts' match history, so this player's may come back empty.",
   },
 };
 
@@ -1014,8 +1022,9 @@ function MatchRow({ match, t, lang, onOpen }) {
 }
 
 // Scoreboard table for one team (or the whole lobby in free-for-all modes).
-// The viewer's own row is tinted so it's findable at a glance.
-function ScoreboardTable({ players, viewer, t }) {
+// The viewer's own row is tinted so it's findable at a glance; every other name
+// is a button that jumps the history list onto that player.
+function ScoreboardTable({ players, viewer, t, onPlayer }) {
   const cell = 'px-2 py-2 text-right font-black tabular-nums';
   return (
     <div className="overflow-x-auto">
@@ -1035,14 +1044,22 @@ function ScoreboardTable({ players, viewer, t }) {
           {players.map((p) => (
             <tr key={p.puuid} className={p.puuid === viewer ? 'bg-val-accent/[0.08]' : ''}>
               <td className="px-2 py-2">
-                <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onPlayer?.(p.puuid)}
+                  disabled={p.puuid === viewer}
+                  title={p.puuid === viewer ? undefined : t.matchViewProfile}
+                  className="flex items-center gap-2 text-left transition-opacity enabled:hover:opacity-80 disabled:cursor-default"
+                >
                   {p.agentIcon ? (
                     <img src={p.agentIcon} alt={p.agent || ''} loading="lazy" className="h-7 w-7 shrink-0 rounded object-cover" />
                   ) : (
                     <span className="h-7 w-7 shrink-0 rounded bg-white/5" />
                   )}
                   <span className="min-w-0">
-                    <span className="block max-w-[8.5rem] truncate text-xs font-bold text-white sm:max-w-[12rem]">{p.name}</span>
+                    <span className={`block max-w-[8.5rem] truncate text-xs font-bold text-white sm:max-w-[12rem] ${p.puuid === viewer ? '' : 'underline decoration-white/20 underline-offset-2'}`}>
+                      {p.name}
+                    </span>
                     <span className="flex items-center gap-1">
                       {p.rank?.icon && <img src={p.rank.icon} alt="" className="h-3 w-3" />}
                       <span
@@ -1053,7 +1070,7 @@ function ScoreboardTable({ players, viewer, t }) {
                       </span>
                     </span>
                   </span>
-                </div>
+                </button>
               </td>
               <td className={`${cell} text-white`}>{p.acs}</td>
               <td className={`${cell} text-white`}>{p.kills}</td>
@@ -1071,7 +1088,7 @@ function ScoreboardTable({ players, viewer, t }) {
 
 // Full-screen scoreboard for one match. `summary` is the list row that was
 // clicked, so the header can render instantly while the detail request runs.
-function MatchModal({ state, viewer, t, lang, onClose }) {
+function MatchModal({ state, viewer, t, lang, onClose, onPlayer }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -1155,7 +1172,7 @@ function MatchModal({ state, viewer, t, lang, onClose }) {
             <div key={teamLabel || i} className={i ? 'mt-5' : ''}>
               {teamLabel && <SectionLabel>{teamLabel}</SectionLabel>}
               <div className="mt-2 rounded-2xl border border-white/10 bg-val-panel p-1.5">
-                <ScoreboardTable players={list} viewer={viewer} t={t} />
+                <ScoreboardTable players={list} viewer={viewer} t={t} onPlayer={onPlayer} />
               </div>
             </div>
           ))}
@@ -1167,7 +1184,7 @@ function MatchModal({ state, viewer, t, lang, onClose }) {
 
 // Matches view: player header, queue filter chips, the row list, and a
 // load-more button that appends the next page.
-function MatchesView({ matches, player, total, queue, loading, loadingMore, error, t, lang, onQueue, onMore, onOpen }) {
+function MatchesView({ matches, player, total, queue, loading, loadingMore, error, viewingOther, t, lang, onQueue, onMore, onOpen, onBack }) {
   const chip = (key, label) => (
     <button
       key={key || 'all'}
@@ -1190,7 +1207,18 @@ function MatchesView({ matches, player, total, queue, loading, loadingMore, erro
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="truncate text-xl font-black uppercase tracking-wide sm:text-2xl">{t.matchTitle}</h2>
+          {viewingOther && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="mb-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-300 transition-colors hover:text-white"
+            >
+              {t.matchBackToMine}
+            </button>
+          )}
+          <h2 className="truncate text-xl font-black uppercase tracking-wide sm:text-2xl">
+            {viewingOther ? player?.displayName || t.playerFallback : t.matchTitle}
+          </h2>
           {player?.displayName && (
             <p className="mt-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               {player.rank?.icon && <img src={player.rank.icon} alt="" className="h-4 w-4" />}
@@ -1216,7 +1244,9 @@ function MatchesView({ matches, player, total, queue, loading, loadingMore, erro
       {loading && <Spinner />}
 
       {!loading && shown === 0 && !error && (
-        <div className="rounded-2xl border border-white/10 bg-val-panel p-6 text-center text-slate-400">{t.matchEmpty}</div>
+        <div className="rounded-2xl border border-white/10 bg-val-panel p-6 text-center text-sm text-slate-400">
+          {viewingOther ? t.matchOtherEmpty : t.matchEmpty}
+        </div>
       )}
 
       {shown > 0 && (
@@ -1265,6 +1295,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
   const [matchPlayer, setMatchPlayer] = useState(null);
   const [matchTotal, setMatchTotal] = useState(0);
   const [matchQueue, setMatchQueue] = useState(''); // '' = every mode
+  const [matchTarget, setMatchTarget] = useState(null); // puuid being browsed, null = own account
   const [matchesLoading, setMatchesLoading] = useState(false);
   const [matchesMore, setMatchesMore] = useState(false);
   const [matchesError, setMatchesError] = useState('');
@@ -1275,6 +1306,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     setMatchPlayer(null);
     setMatchTotal(0);
     setMatchQueue('');
+    setMatchTarget(null);
     setMatchesError('');
     setDetail(null);
   };
@@ -1359,9 +1391,9 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
   };
 
   // Match history is paginated: `startIndex` 0 replaces the list, anything
-  // higher appends. The queue is passed explicitly because the chip handler
-  // fires before its state update lands.
-  const loadMatches = async (queue = matchQueue, startIndex = 0) => {
+  // higher appends. Queue and target are passed explicitly because their
+  // handlers fire before the state updates land.
+  const loadMatches = async (queue = matchQueue, startIndex = 0, target = matchTarget) => {
     if (!session) return;
     if (startIndex === 0) {
       setMatchesLoading(true);
@@ -1371,6 +1403,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     }
     setMatchesError('');
     const res = await fetchValorantMatches(session, {
+      puuid: target || undefined,
       queue: queue || undefined,
       startIndex,
       count: MATCH_PAGE,
@@ -1390,7 +1423,22 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
   const changeMatchQueue = (queue) => {
     if (queue === matchQueue) return;
     setMatchQueue(queue);
-    loadMatches(queue, 0);
+    loadMatches(queue, 0, matchTarget);
+  };
+
+  // Clicking a name on a scoreboard swaps the whole history list onto that
+  // player. Riot often refuses other accounts, so the view says so when the
+  // page comes back empty.
+  const viewPlayer = (puuid) => {
+    if (!puuid || puuid === matchPlayer?.puuid) return;
+    setDetail(null);
+    setMatchTarget(puuid);
+    loadMatches(matchQueue, 0, puuid);
+  };
+
+  const backToOwnMatches = () => {
+    setMatchTarget(null);
+    loadMatches(matchQueue, 0, null);
   };
 
   // The list row already carries everything the modal header needs, so the
@@ -1721,11 +1769,13 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
                 loading={matchesLoading}
                 loadingMore={matchesMore}
                 error={matchesError}
+                viewingOther={!!matchTarget}
                 t={t}
                 lang={lang}
                 onQueue={changeMatchQueue}
-                onMore={() => loadMatches(matchQueue, matches?.length || 0)}
+                onMore={() => loadMatches(matchQueue, matches?.length || 0, matchTarget)}
                 onOpen={openMatch}
+                onBack={backToOwnMatches}
               />
             )}
 
@@ -1765,6 +1815,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
           t={t}
           lang={lang}
           onClose={() => setDetail(null)}
+          onPlayer={viewPlayer}
         />
       )}
     </div>

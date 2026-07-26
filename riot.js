@@ -775,6 +775,31 @@ function buildMatch(raw, idx, viewer) {
   };
 }
 
+// match-details blanks out gameName/tagLine for nearly every player, so the
+// scoreboard has to resolve them separately. The name service takes the whole
+// lobby in one PUT. Returns { [puuid]: 'Name#TAG' } — misses are left out so
+// the caller keeps its own placeholder.
+async function resolveNames(headers, shard, puuids) {
+  const out = {};
+  const ids = [...new Set((puuids || []).filter(isRiotId))];
+  if (!ids.length) return out;
+  try {
+    const res = await fetch(pdUrl(shard, '/name-service/v2/players'), {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(ids),
+    });
+    if (!res.ok) return out;
+    for (const n of (await res.json()) || []) {
+      if (!n?.Subject || !n.GameName) continue;
+      out[n.Subject] = n.TagLine ? `${n.GameName}#${n.TagLine}` : n.GameName;
+    }
+  } catch {
+    /* scoreboard keeps the placeholder names */
+  }
+  return out;
+}
+
 // Resolve a display name (+ rank when Riot allows it) for any puuid — used for
 // the header when browsing someone else's history.
 async function getPlayerBrief(headers, shard, puuid) {
@@ -1114,5 +1139,11 @@ export async function fetchMatchDetail(tokens, matchId, viewerPuuid) {
   ]);
   if (!raw) return { status: 'error', error: 'Detail match tidak tersedia (mungkin sudah terlalu lama).' };
 
-  return { status: 'ok', match: buildMatch(raw, { maps, agents, tiers }, viewer) };
+  const match = buildMatch(raw, { maps, agents, tiers }, viewer);
+  // `me` is the same object as its row in `players`, so patching the array
+  // covers both.
+  const names = await resolveNames(headers, shard, match.players.map((p) => p.puuid));
+  for (const p of match.players) if (names[p.puuid]) p.name = names[p.puuid];
+
+  return { status: 'ok', match };
 }
