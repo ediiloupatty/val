@@ -842,13 +842,13 @@ function Spinner() {
   );
 }
 
-export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' }) {
+// `tab` is owned by App so it can live in the URL — the hub only asks for a
+// change through `onTab`. 'dashboard' | 'inventory' | 'store' | 'night'.
+export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id', tab = 'dashboard', onTab }) {
   const t = HUB_TEXT[lang] || HUB_TEXT.id;
   const [session, setSession] = useState(() => loadSsid()); // ssid string or null
   const [ssidInput, setSsidInput] = useState('');
   const [loginError, setLoginError] = useState('');
-
-  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'inventory' | 'store' | 'night'
 
   const [overview, setOverview] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -868,7 +868,7 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     setOverview(null);
     setStore(null);
     setInventory(null);
-    setTab('dashboard');
+    onTab?.('dashboard');
     setSsidInput('');
     onLogout?.();
   };
@@ -939,11 +939,17 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id' 
     setInventory(res.inventory);
   };
 
-  const goTab = (next) => {
-    setTab(next);
-    if (next === 'store' || next === 'night') loadStore();
-    if (next === 'inventory') loadInventory();
-  };
+  // Fetch whatever the open tab needs. Driven by the tab itself rather than by
+  // the click handler, so opening the hub straight on /valorant/inventory —
+  // a refresh or a shared link — loads it just the same. Both loaders no-op
+  // when their data is already in hand.
+  useEffect(() => {
+    if (!session) return;
+    if (tab === 'store' || tab === 'night') loadStore();
+    if (tab === 'inventory') loadInventory();
+  }, [tab, session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const goTab = (next) => onTab?.(next);
 
   const handleLogin = (e) => {
     e.preventDefault();

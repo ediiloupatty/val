@@ -60,6 +60,29 @@ function writeProfileCache(name, best) {
   }
 }
 
+// Hash routing. The screen (and, inside the hub, the open tab) lives in the
+// URL so a reload lands back where the user was instead of the landing page,
+// and the browser's back button steps through the tabs. Hash rather than
+// history paths: the app is served as a static SPA with no rewrite rules, so
+// a real path would 404 on refresh.
+const HUB_TABS = ['dashboard', 'inventory', 'store', 'night'];
+
+function parseHash() {
+  if (typeof window === 'undefined') return { view: 'landing', tab: null };
+  const [head, sub] = (window.location.hash || '').replace(/^#\/?/, '').split('/');
+  if (head === 'play') return { view: 'play', tab: null };
+  if (head === 'valorant') {
+    return { view: 'valorant', tab: HUB_TABS.includes(sub) ? sub : 'dashboard' };
+  }
+  return { view: 'landing', tab: null };
+}
+
+function routeToHash({ view, tab }) {
+  if (view === 'play') return '#/play';
+  if (view === 'valorant') return `#/valorant/${tab || 'dashboard'}`;
+  return '#/';
+}
+
 function ToastContainer({ toasts }) {
   return (
     <div className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-2 pointer-events-none">
@@ -82,7 +105,35 @@ function ToastContainer({ toasts }) {
 }
 
 export default function App() {
-  const [view, setView] = useState('landing'); // 'landing' | 'play' | 'shop'
+  // { view: 'landing' | 'play' | 'valorant', tab } — hydrated from the URL so a
+  // refresh (or a shared link) reopens the same screen.
+  const [route, setRoute] = useState(parseHash);
+  const { view } = route;
+  const go = useCallback((nextView, tab = null) => setRoute({ view: nextView, tab }), []);
+
+  // Write the route back into the URL. Assigning `hash` pushes a history entry,
+  // so Back returns to the previous tab rather than leaving the site — except
+  // on the very first paint, where stamping '#/' onto a bare URL would swallow
+  // the user's first Back press.
+  const hashSynced = useRef(false);
+  useEffect(() => {
+    const next = routeToHash(route);
+    if (window.location.hash === next) {
+      hashSynced.current = true;
+      return;
+    }
+    if (hashSynced.current) window.location.hash = next;
+    else window.history.replaceState(null, '', next);
+    hashSynced.current = true;
+  }, [route]);
+
+  // Back/forward (and any manual URL edit) drive the route the other way.
+  useEffect(() => {
+    const onHash = () => setRoute(parseHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
   const [lang, setLang] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('vat_settings'));
@@ -266,8 +317,8 @@ export default function App() {
       <ToastContainer toasts={toasts} />
       {view === 'landing' ? (
         <Landing
-          onPlay={() => setView('play')}
-          onShop={() => setView('valorant')}
+          onPlay={() => go('play')}
+          onShop={() => go('valorant', 'dashboard')}
           lang={lang}
           setLang={handleSetLang}
           isMobile={isMobile}
@@ -288,10 +339,12 @@ export default function App() {
           }
         >
           <ValorantHub
-            onExit={() => setView('landing')}
+            onExit={() => go('landing')}
             onIdentity={handleValorantIdentity}
             onLogout={handleValorantLogout}
             lang={lang}
+            tab={route.tab || 'dashboard'}
+            onTab={(next) => go('valorant', next)}
           />
         </Suspense>
       ) : (
@@ -303,7 +356,7 @@ export default function App() {
           }
         >
           <AimTrainer
-            onExit={() => setView('landing')}
+            onExit={() => go('landing')}
             lang={lang}
             setLang={handleSetLang}
             isMobile={isMobile}
