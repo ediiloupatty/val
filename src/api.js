@@ -74,7 +74,9 @@ export async function fetchProfile(deviceId) {
  * Cloudflare D1 database (upsert by deviceId).
  */
 export async function saveProfile(deviceId, name, best) {
-  if (!deviceId) return { ok: false };
+  // The server requires a non-empty name, so an anonymous profile (nothing
+  // typed yet) would 400 on every mount. Skip the round trip instead.
+  if (!deviceId || !String(name || '').trim()) return { ok: false };
   // The server rejects the whole save if any best stat isn't a finite number
   // or falls outside its validation bounds (legacy profiles can hold values
   // stored before those bounds existed). Normalise AND clamp so that saving a
