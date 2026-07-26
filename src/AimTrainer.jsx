@@ -488,7 +488,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     const HIT_LIGHT_PEAK = 3;      // point-light intensity at the instant of impact
     const HIT_LIGHT_TIME = 0.09;   // seconds for that light to fall to zero
     const HIT_LIGHT_RANGE = 5;     // how far the flash reaches into the room
-    const HIT_CORE_EMISSIVE = 1.4; // how hot the ball's own material goes
+    const HIT_CORE_EMISSIVE = 2.2; // how hot the ball's own material goes
+    const HIT_FLASH_SIZE = 2.2;    // flash sprite width, as a multiple of the radius
+    const HIT_FLASH_GROWTH = 1.35; // how much it swells before it dies
+    const HIT_FLASH_OPACITY = 0.8; // sprite opacity at birth
+    const HIT_FLASH_TIME = 0.12;   // seconds from full brightness to gone
 
     const hitLight = new THREE.PointLight(0xffffff, 0, HIT_LIGHT_RANGE);
     scene.add(hitLight);
@@ -519,13 +523,52 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       }
     }
 
+    // --- Impact flash sprite --------------------------------------------------
+    // A camera-facing radial gradient, drawn once into a texture and reused.
+    // The earlier attempt at this was an additive sphere, which has a defined
+    // edge — over a dark background that edge read as a smudge stuck to the
+    // ball. A gradient that falls to fully transparent has no silhouette at all,
+    // so it reads as light instead of as an object.
+    const flashTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.25, 'rgba(255,255,255,0.65)');
+      grad.addColorStop(0.55, 'rgba(255,255,255,0.18)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(c);
+    })();
+    const hitFlashes = []; // { sprite, age, from, to }
+
+    function spawnHitFlash(pos, hexColor, radius) {
+      const mat = new THREE.SpriteMaterial({
+        map: flashTex,
+        color: hexColor,
+        transparent: true,
+        opacity: HIT_FLASH_OPACITY,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false, // never clipped by the ball it was spawned inside
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.copy(pos);
+      const from = radius * HIT_FLASH_SIZE;
+      sprite.scale.setScalar(from);
+      hitFlashes.push({ sprite, age: 0, from, to: from * HIT_FLASH_GROWTH });
+      scene.add(sprite);
+    }
+
     // Everything that fires the instant a target dies, from either the shooting
-    // path or a tracking kill: the ball brightens from the inside, debris
-    // scatters, and a short point light throws the colour onto whatever is
-    // nearby. No glow shell around the ball — an additive sphere over this dark
-    // background read as a smudge sitting on the target rather than as light.
+    // path or a tracking kill: a flash blooms at the impact point, the ball
+    // brightens from the inside, debris scatters, and a short point light
+    // throws the colour onto whatever is nearby.
     function playImpact(mesh, hexColor) {
       mesh.material.emissiveIntensity = HIT_CORE_EMISSIVE;
+      spawnHitFlash(mesh.position, hexColor, hitRadii.get(mesh) || mesh.userData.radius || 0.28);
       spawnHitParticles(mesh.position, hexColor);
       hitLight.color.setHex(hexColor);
       hitLight.position.copy(mesh.position);
@@ -702,6 +745,11 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         dtg.mesh.material.dispose();
       }
       dyingTargets.length = 0;
+      for (const f of hitFlashes) {
+        scene.remove(f.sprite);
+        f.sprite.material.dispose();
+      }
+      hitFlashes.length = 0;
       hitLight.intensity = 0;
       hitLightTimer = 0;
     }
@@ -1127,6 +1175,22 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         }
       }
 
+      // --- Impact flash sprites ---
+      for (let i = hitFlashes.length - 1; i >= 0; i--) {
+        const f = hitFlashes[i];
+        f.age += dt;
+        if (f.age >= HIT_FLASH_TIME) {
+          scene.remove(f.sprite);
+          f.sprite.material.dispose();
+          hitFlashes.splice(i, 1);
+        } else {
+          const frac = f.age / HIT_FLASH_TIME;
+          f.sprite.scale.setScalar(f.from + (f.to - f.from) * frac);
+          // Squared fade: full brightness on the first frame, then away fast.
+          f.sprite.material.opacity = HIT_FLASH_OPACITY * Math.pow(1 - frac, 2);
+        }
+      }
+
       // --- Hit particle burst update ---
       for (let i = hitParticles.length - 1; i >= 0; i--) {
         const p = hitParticles[i];
@@ -1269,6 +1333,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       for (const p of hitParticles) { scene.remove(p.mesh); p.mesh.material.dispose(); }
       hitParticles.length = 0;
       particleGeo.dispose();
+      // clearTargets() already removed the live sprites; the shared texture is
+      // all that's left to release.
+      flashTex.dispose();
       renderer.dispose();
       if (canvas.parentNode === mount) mount.removeChild(canvas);
       engine.current = null;
