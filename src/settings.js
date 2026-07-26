@@ -27,6 +27,7 @@ export const SETTINGS_DEFAULTS = {
   showGun: true, // render the first-person weapon model
   targetColor: '#00e5c0', // fill/emissive colour of standard (non-avoid) targets
   showPbReference: true, // osu!-style live personal-best chase HUD
+  showFps: false, // FPS readout in the arena corner — off unless asked for
 };
 
 export function loadSettings() {

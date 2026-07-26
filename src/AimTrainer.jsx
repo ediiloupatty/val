@@ -143,10 +143,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   // muzzleFlash, showGun, targetColor, showPbReference) owned by the Settings panel.
   useEffect(() => {
     const id = setTimeout(() => {
-      saveSettings({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang });
+      saveSettings({ sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang, showFps });
     }, 400);
     return () => clearTimeout(id);
-  }, [sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang]);
+  }, [sensitivity, crosshairColor, crosshairSize, targetSize, modeKey, lang, showFps]);
 
   // QoL gameplay settings — read once on mount and held in a ref. They're chosen
   // from the main-menu Settings panel before entering the arena, so reading them
@@ -171,7 +171,16 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const [hits, setHits] = useState(0);
   const [misses, setMisses] = useState(0);
   const [avgRt, setAvgRt] = useState(0); // avg split time between consecutive hits (ms)
-  const [fps, setFps] = useState(0);
+  // The FPS readout is diagnostic, not gameplay: off unless the player asks for
+  // it, and it surfaces on its own whenever the frame rate actually drops. The
+  // number itself is written straight to the DOM once a second (see onFps), so
+  // React only tracks the one bit that decides whether the badge exists at all.
+  const [showFps, setShowFps] = useState(() => !!loadSettings().showFps);
+  const [fpsLow, setFpsLow] = useState(false);
+  const fpsRef = useRef(0);
+  // The setup panel opens on the choices that matter (mode, start); tuning is
+  // one click away rather than permanently occupying the column.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [popups, setPopups] = useState([]); // floating +score / MISS feedback
   const [hitKey, setHitKey] = useState(0); // bumped each hit to replay the hitmarker
   const [newHigh, setNewHigh] = useState(false);
@@ -1306,11 +1315,16 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       if (!locked) setIsMoving(false);
     };
     engine.current.onFps = (v) => {
+      fpsRef.current = v;
       const el = document.getElementById('live-fps');
       if (el) {
         el.innerText = `${v} FPS`;
-        el.className = `rounded-full bg-black/40 border border-white/10 px-3 py-1.5 text-xs font-bold tabular-nums shadow-sm ${v >= 120 ? 'text-emerald-400' : v >= 60 ? 'text-yellow-400' : 'text-val-red'}`;
+        el.className = fpsBadgeClass(v);
       }
+      // State changes only when the badge has to appear or disappear; setting
+      // it every second would undo the point of writing the DOM by hand.
+      const low = v < 60;
+      setFpsLow((prev) => (prev === low ? prev : low));
     };
     engine.current.onMoveState = (m) => setIsMoving(m);
     // Tracking mode isn't on the global leaderboard, so it keeps its own raw
@@ -1671,7 +1685,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           underneath at all times, so toggling play never resizes the WebGL
           canvas — the result is a smooth slide with no map glitch. */}
       <aside
-        className={`no-scrollbar absolute left-0 top-0 z-20 flex h-full w-80 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-[#141d24]/25 backdrop-blur-lg p-6 transition-transform duration-300 ease-out ${
+        className={`no-scrollbar absolute left-0 top-0 z-20 flex h-full w-80 flex-col gap-5 overflow-y-auto border-r border-white/10 bg-[#141d24]/25 p-6 backdrop-blur-lg transition-transform duration-300 ease-out ${
           isFullscreen || (isRunning && isLocked) ? '-translate-x-full' : 'translate-x-0'
         }`}
       >
@@ -1696,7 +1710,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
                 onExit();
               }}
               title="Menu"
-              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-sm transition-all hover:bg-white/20"
+              className="rounded-full px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
             >
               ← Menu
             </button>
@@ -1708,18 +1722,19 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           <button
             onClick={() => setModeOpen((o) => !o)}
             disabled={isLocked}
-            className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>
-              <span className="block text-[10px] uppercase tracking-widest text-slate-400">
-                {t.mode}
+            <span className="min-w-0">
+              <span className="block text-[11px] text-slate-400">{t.mode}</span>
+              <span className="flex items-center gap-1.5 text-sm font-bold text-white">
+                <ReticleIcon className="h-3.5 w-3.5 shrink-0 text-val-red" />
+                {modeText.name}
               </span>
-              <span className="text-sm font-bold text-val-red">⌖ {modeText.name}</span>
             </span>
-            <span className="text-xs text-slate-400">{modeOpen ? '▲' : '▼'}</span>
+            <ChevronIcon open={modeOpen} className="h-3.5 w-3.5 shrink-0 text-slate-500" />
           </button>
           {modeOpen && !isLocked && (
-            <div className="absolute z-40 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0f1922] shadow-xl">
+            <div className="absolute z-40 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f1922] shadow-xl">
               {MODE_ORDER.map((key) => (
                 <button
                   key={key}
@@ -1744,177 +1759,138 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
         {/* Counter-Strafe mechanic tip — only shown in strafe mode */}
         {modeKey === 'strafe' && (
-          <div className="rounded-2xl border border-[#ff4655]/20 bg-[#ff4655]/5 px-4 py-3">
-            <p className="text-[11px] leading-relaxed text-slate-400">
-              <span className="font-bold text-[#ff4655]">Counter-Strafe · </span>
-              {t.strafeTip}
-            </p>
-          </div>
+          <p className="border-l-2 border-val-red/50 pl-3 text-[11px] leading-relaxed text-slate-400">
+            {t.strafeTip}
+          </p>
         )}
 
-        {/* Tracking mode settings + tip */}
+        {/* Tracking mode options + tip */}
         {modeKey === 'tracking' && (
-          <div className="space-y-2 rounded-2xl border border-[#00e5c0]/20 bg-[#00e5c0]/5 px-4 py-3">
-            {/* Difficulty selector */}
-            <div>
-              <p className="mb-1 text-[10px] uppercase tracking-widest text-slate-500">{t.difficulty}</p>
-              <div className="flex gap-1">
-                {['easy', 'medium', 'hard'].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setTrackingDifficulty(d)}
-                    className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                      trackingDifficulty === d
-                        ? 'bg-[#00e5c0] text-[#16212b]'
-                        : 'bg-[#16212b]/60 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {t[d]}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Ball size selector */}
-            <div>
-              <p className="mb-1 text-[10px] uppercase tracking-widest text-slate-500">{t.ballSize}</p>
-              <div className="flex gap-1">
-                {['small', 'medium', 'large'].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setTrackingBallSize(s)}
-                    className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                      trackingBallSize === s
-                        ? 'bg-[#00e5c0] text-[#16212b]'
-                        : 'bg-[#16212b]/60 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {s === 'medium' ? t.medium : s === 'small' ? t.small : t.large}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Tip text */}
-            <p className="text-[11px] leading-relaxed text-slate-400">
-              <span className="font-bold text-[#00e5c0]">Tracking · </span>
+          <div className="space-y-3">
+            <Segmented
+              label={t.difficulty}
+              options={[['easy', t.easy], ['medium', t.medium], ['hard', t.hard]]}
+              value={trackingDifficulty}
+              onChange={setTrackingDifficulty}
+            />
+            <Segmented
+              label={t.ballSize}
+              options={[['small', t.small], ['medium', t.medium], ['large', t.large]]}
+              value={trackingBallSize}
+              onChange={setTrackingBallSize}
+            />
+            <p className="border-l-2 border-val-accent/50 pl-3 text-[11px] leading-relaxed text-slate-400">
               {t.trackingTip}
             </p>
           </div>
         )}
 
-        {/* Timer */}
-        <div className="rounded-2xl bg-white/5 p-4 text-center">
-          <p className="text-[10px] uppercase tracking-widest text-slate-400">
-            {t.timeRemaining}
-          </p>
-          <p
-            className={`text-4xl font-black tabular-nums ${
-              timeLeft <= 10 && isRunning ? 'text-val-red' : 'text-white'
-            }`}
-          >
-            {String(timeLeft).padStart(2, '0')}s
-          </p>
-        </div>
-
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-2">
-          <Stat label={t.score} value={score} accent />
-          {mode.tracking ? (
-            <>
-              <Stat label={t.kills} value={hits} good />
-              <Stat label={t.onTargetAcc} value={`${trackingAccuracy.toFixed(1)}%`} />
-              <Stat label={t.combo} value={`${trackingComboDisplay.toFixed(1)}x`} accent />
-              <Stat label={t.avgReacquire} value={trackingAvgSwitch > 0 ? `${Math.round(trackingAvgSwitch)} ms` : '—'} wide />
-            </>
-          ) : (
-            <>
-              <Stat label={t.accuracy} value={`${accuracy.toFixed(1)}%`} />
-              <Stat label={t.hits} value={hits} good />
-              <Stat label={t.misses} value={misses} bad />
-              <Stat
-                label={mode.reflex ? t.avgReaction : t.avgSplit}
-                value={`${avgRt ? Math.round(avgRt) : 0} ms`}
-                wide
-              />
-            </>
-          )}
-          <Stat label={t.bestScore} value={best.score} accent wide />
-        </div>
-
-        {/* Controls */}
+        {/* Primary action. The only filled control on the panel, so the eye has
+            exactly one place to land. Live score, accuracy and the clock are
+            deliberately absent here — this sidebar is hidden for the whole
+            round, so anything live on it would only ever be read at zero. The
+            in-arena HUD carries them instead, and the summary reports the rest. */}
         <div className="flex gap-2">
           <button
             onClick={startPractice}
             disabled={isRunning}
-            className="flex-1 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-val-accent px-4 py-3 text-sm font-black uppercase tracking-wider text-val-dark transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
+            {!isRunning && <PlayIcon className="h-3.5 w-3.5" />}
             {isRunning ? t.running : t.startBtn.replace('▶ ', '')}
           </button>
           <button
             onClick={reset}
-            className="rounded-2xl border border-white/10 bg-transparent px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-300 transition-colors hover:bg-white/5"
+            className="rounded-xl px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
           >
             {t.reset}
           </button>
         </div>
 
-        {/* Settings panel */}
-        <div className="mt-2 space-y-5 rounded-3xl bg-white/[0.03] p-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-slate-400">
+        {/* Personal best for this mode — the one number that's worth carrying
+            into a run, as a line rather than a card. */}
+        <p className="flex items-baseline justify-between border-t border-white/5 pt-3 text-[11px] text-slate-400">
+          {t.bestScore}
+          <span className="text-sm font-black tabular-nums text-white">{best.score}</span>
+        </p>
+
+        {/* Settings — collapsed by default; most rounds never touch these. */}
+        <div className="border-t border-white/5 pt-3">
+          <button
+            onClick={() => setSettingsOpen((o) => !o)}
+            aria-expanded={settingsOpen}
+            className="flex w-full items-center justify-between py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 transition-colors hover:text-white"
+          >
             {t.settings}
-          </p>
+            <ChevronIcon open={settingsOpen} className="h-3.5 w-3.5" />
+          </button>
 
-          <Slider
-            label={t.sensitivity}
-            value={sensitivity}
-            min={0.05}
-            max={2}
-            step={0.01}
-            onChange={setSensitivity}
-            display={sensitivity.toFixed(2)}
-          />
-
-          <Slider
-            label={t.targetSize}
-            value={targetSize}
-            min={0.12}
-            max={0.6}
-            step={0.01}
-            onChange={setTargetSize}
-            display={targetSize.toFixed(2)}
-          />
-          {targetSize > RANKED_SIZE_MAX && (
-            <p className="-mt-3 text-[11px] leading-snug text-val-red/90">
-              {t.sizeOutOfBand}
-            </p>
-          )}
-
-          {/* Crosshair customizer */}
-          <div className="space-y-2 border-t border-white/5 pt-3">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-              {t.crosshair}
-            </p>
-            <div className="flex items-center justify-between text-xs">
-              <label className="text-slate-300">{t.color}</label>
-              <input
-                type="color"
-                value={crosshairColor}
-                onChange={(e) => setCrosshairColor(e.target.value)}
-                className="h-7 w-12 cursor-pointer rounded bg-transparent"
+          {settingsOpen && (
+            <div className="mt-4 space-y-5">
+              <Slider
+                label={t.sensitivity}
+                value={sensitivity}
+                min={0.05}
+                max={2}
+                step={0.01}
+                onChange={setSensitivity}
+                display={sensitivity.toFixed(2)}
               />
+
+              <Slider
+                label={t.targetSize}
+                value={targetSize}
+                min={0.12}
+                max={0.6}
+                step={0.01}
+                onChange={setTargetSize}
+                display={targetSize.toFixed(2)}
+              />
+              {targetSize > RANKED_SIZE_MAX && (
+                <p className="-mt-3 text-[11px] leading-snug text-val-red/90">
+                  {t.sizeOutOfBand}
+                </p>
+              )}
+
+              {/* Crosshair customizer */}
+              <div className="space-y-2.5 border-t border-white/5 pt-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                  {t.crosshair}
+                </p>
+                <div className="flex items-center justify-between text-xs">
+                  <label className="text-slate-300">{t.color}</label>
+                  <input
+                    type="color"
+                    value={crosshairColor}
+                    onChange={(e) => setCrosshairColor(e.target.value)}
+                    className="h-7 w-12 cursor-pointer rounded bg-transparent"
+                  />
+                </div>
+                <Slider
+                  label={t.size}
+                  value={crosshairSize}
+                  min={4}
+                  max={28}
+                  step={1}
+                  onChange={(v) => setCrosshairSize(Math.round(v))}
+                  display={`${crosshairSize}px`}
+                />
+              </div>
+
+              <label className="flex cursor-pointer items-center justify-between border-t border-white/5 pt-4 text-xs text-slate-300">
+                {t.showFps}
+                <input
+                  type="checkbox"
+                  checked={showFps}
+                  onChange={(e) => setShowFps(e.target.checked)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-val-accent"
+                />
+              </label>
             </div>
-            <Slider
-              label={t.size}
-              value={crosshairSize}
-              min={4}
-              max={28}
-              step={1}
-              onChange={(v) => setCrosshairSize(Math.round(v))}
-              display={`${crosshairSize}px`}
-            />
-          </div>
+          )}
         </div>
 
-        <p className="mt-auto text-center text-[10px] leading-relaxed text-slate-500">
+        <p className="mt-auto pt-4 text-center text-[10px] leading-relaxed text-slate-500">
           {mode.tracking ? t.trackingArenaHint : t.tip}
         </p>
       </aside>
@@ -1943,32 +1919,28 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
         {/* Top-right controls: FPS meter + mute + fullscreen toggle */}
         <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
-          <div
-            id="live-fps"
-            className={`rounded-full bg-black/40 border border-white/10 px-3 py-1.5 text-xs font-bold tabular-nums shadow-sm ${
-              fps >= 120
-                ? 'text-emerald-400'
-                : fps >= 60
-                ? 'text-yellow-400'
-                : 'text-val-red'
-            }`}
-          >
-            {fps} FPS
-          </div>
+          {/* Shown when asked for, and unprompted whenever the frame rate is
+              actually worth knowing about. Two states, not four: fine, or not. */}
+          {(showFps || fpsLow) && (
+            <div id="live-fps" className={fpsBadgeClass(fpsRef.current)}>
+              {fpsRef.current} FPS
+            </div>
+          )}
           <button
             onClick={() => setMuted((m) => !m)}
             title={muted ? t.unmute : t.mute}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm leading-none shadow-sm transition-all hover:scale-105 hover:bg-black/60 active:scale-95"
-            style={{ color: muted ? '#ff4655' : '#94a3b8' }}
+            className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 transition-colors hover:bg-black/60 ${
+              muted ? 'text-val-red' : 'text-slate-400 hover:text-white'
+            }`}
           >
-            {muted ? '🔇' : '🔊'}
+            {muted ? <SoundOffIcon /> : <SoundOnIcon />}
           </button>
           <button
             onClick={toggleFullscreen}
             title={isFullscreen ? t.fsExit : t.fsEnter}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-sm leading-none text-slate-200 shadow-sm transition-all hover:scale-105 hover:bg-black/60 active:scale-95"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-slate-400 transition-colors hover:bg-black/60 hover:text-white"
           >
-            {isFullscreen ? '🗗' : '⛶'}
+            <FullscreenIcon exit={isFullscreen} />
           </button>
         </div>
 
@@ -2011,7 +1983,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
         {/* Idle / paused overlays */}
         {!isRunning && countdown === null && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 transition-all">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 transition-all">
             <div className="pointer-events-auto text-center">
               {hasPlayed && timeLeft === 0 ? (
                 <SessionSummary
@@ -2041,9 +2013,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
                   </p>
                   <button
                     onClick={startPractice}
-                    className="mt-6 rounded-3xl border border-white/20 bg-white/10 px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
+                    className="mx-auto mt-6 flex items-center gap-2 rounded-xl bg-val-accent px-8 py-3.5 text-sm font-black uppercase tracking-wider text-val-dark transition-all hover:brightness-110 active:scale-[0.98]"
                   >
-                    {t.startBtn}
+                    <PlayIcon className="h-3.5 w-3.5" />
+                    {t.startBtn.replace('▶ ', '')}
                   </button>
                 </>
               )}
@@ -2077,8 +2050,8 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
             on the side. Flips to a celebratory state the moment it's surpassed. */}
         {isRunning && showPbRef.current && pbTarget > 0 && (
           <div className="pointer-events-none absolute right-5 top-1/2 z-10 -translate-y-1/2 text-right md:right-8">
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">
-              {pbBeaten ? `🔥 ${t.pbBeaten}` : t.pbChase}
+            <p className={`text-[10px] font-bold uppercase tracking-[0.3em] ${pbBeaten ? 'text-val-accent' : 'text-slate-400'}`}>
+              {pbBeaten ? t.pbBeaten : t.pbChase}
             </p>
             <p
               className={`text-3xl font-black tabular-nums transition-colors md:text-4xl ${
@@ -2099,7 +2072,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       {/* Confirm switching mode mid-round — it restarts the timer & score */}
       {pendingMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-80 rounded-[2rem] border border-white/10 bg-[#141d24] p-7 text-center shadow-2xl">
+          <div className="w-80 rounded-2xl border border-white/10 bg-[#141d24] p-7 text-center shadow-2xl">
             <p className="text-lg font-black uppercase tracking-widest text-val-red">
               {t.changeModeTitle}
             </p>
@@ -2116,13 +2089,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
             <div className="mt-5 flex gap-2">
               <button
                 onClick={confirmModeChange}
-                className="flex-1 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
+                className="flex-1 rounded-xl bg-val-accent px-4 py-2.5 text-sm font-black uppercase tracking-wider text-val-dark transition-all hover:brightness-110 active:scale-[0.98]"
               >
                 {t.changeModeConfirm}
               </button>
               <button
                 onClick={() => setPendingMode(null)}
-                className="flex-1 rounded-2xl border border-white/10 bg-transparent px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-slate-300 transition-colors hover:bg-white/5"
+                className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
               >
                 {t.cancel}
               </button>
@@ -2136,20 +2109,106 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
 /* ------------------------------- Subcomponents ------------------------------ */
 
-function Stat({ label, value, accent, good, bad, wide }) {
-  const color = accent
-    ? 'text-val-accent'
-    : good
-    ? 'text-emerald-400'
-    : bad
-    ? 'text-val-red'
-    : 'text-white';
+// Shared by React and by the per-second DOM writer, so the badge can't end up
+// styled two different ways depending on which one painted it last. Two states:
+// the frame rate is fine, or it isn't.
+function fpsBadgeClass(v) {
+  return `rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-bold tabular-nums ${
+    v > 0 && v < 60 ? 'text-val-red' : 'text-slate-400'
+  }`;
+}
+
+/* Icons. Inline SVG rather than emoji: emoji pick up each platform's own font,
+ * so the same control renders at a different size, weight and colour on every
+ * OS — and never matches the interface around it. */
+const icon = 'h-4 w-4';
+
+function PlayIcon({ className = icon }) {
   return (
-    <div className={`rounded-2xl bg-white/5 p-3 ${wide ? 'col-span-2' : ''}`}>
-      <p className="text-[10px] uppercase tracking-widest text-slate-400">
-        {label}
-      </p>
-      <p className={`text-lg font-black tabular-nums ${color}`}>{value}</p>
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5Z" />
+    </svg>
+  );
+}
+
+function SoundOnIcon({ className = icon }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  );
+}
+
+function SoundOffIcon({ className = icon }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="m16 9 5 6M21 9l-5 6" />
+    </svg>
+  );
+}
+
+function FullscreenIcon({ exit = false, className = icon }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {exit ? (
+        <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+      ) : (
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      )}
+    </svg>
+  );
+}
+
+function ChevronIcon({ open = false, className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg
+      className={`${className} transition-transform ${open ? 'rotate-180' : ''}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function ReticleIcon({ className = icon }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="7" />
+      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+    </svg>
+  );
+}
+
+// Small choice row (difficulty, ball size). Was two hand-rolled button rows
+// inside a tinted card; the tint carried no meaning the label didn't already.
+function Segmented({ label, options, value, onChange }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] text-slate-400">{label}</p>
+      <div className="flex gap-1 rounded-xl bg-white/5 p-1">
+        {options.map(([key, text]) => (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition-colors ${
+              value === key
+                ? 'bg-val-accent text-val-dark'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2159,7 +2218,7 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <label className="text-slate-300">{label}</label>
-        <span className="font-bold text-val-accent">{display}</span>
+        <span className="font-bold tabular-nums text-val-accent">{display}</span>
       </div>
       <input
         type="range"
@@ -2234,22 +2293,24 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
   };
 
   return (
-    <div className="w-[22rem] rounded-[2rem] border border-white/10 bg-[#141d24] p-7 shadow-2xl">
-      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+    <div className="w-[22rem] rounded-2xl border border-white/10 bg-[#141d24] p-7 shadow-2xl">
+      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
         {t.sessionComplete}
       </p>
       {newHigh && (
-        <p className="mt-1 animate-pulse text-xs font-black uppercase tracking-[0.3em] text-val-accent">
+        <p className="mt-1 text-xs font-black uppercase tracking-[0.2em] text-val-accent">
           {t.newRecord}
         </p>
       )}
-      <p className="mt-1 text-5xl font-black text-val-accent tabular-nums">
+      <p className="mt-1 text-5xl font-black tabular-nums text-val-accent">
         {score}
       </p>
-      <p className="text-[11px] uppercase tracking-widest text-slate-400">
-        {t.best} {best.score}
+      <p className="text-[11px] text-slate-400">
+        {t.best} <span className="tabular-nums">{best.score}</span>
       </p>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-left text-sm">
+      {/* Rows on hairlines rather than a grid of cards — same numbers, a
+          quarter of the borders. */}
+      <div className="mt-4 divide-y divide-white/5 border-y border-white/5 text-left">
         {isTracking ? (
           <>
             <SummaryRow label={t.kills} value={hits} />
@@ -2268,8 +2329,8 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
 
       {/* Name prompt — shown only when name is still the default "Agent" */}
       {showPrompt && (
-        <div className="mt-4 rounded-2xl bg-[#ff4655]/10 px-4 py-3">
-          <p className="mb-0.5 text-[11px] font-black uppercase tracking-widest text-[#ff4655]">
+        <div className="mt-4 rounded-xl bg-val-red/10 px-4 py-3">
+          <p className="mb-0.5 text-[11px] font-black uppercase tracking-[0.2em] text-val-red">
             {t.namePromptTitle}
           </p>
           <p className="mb-2.5 text-[11px] leading-snug text-slate-400">
@@ -2287,7 +2348,7 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
             <button
               onClick={handleSave}
               disabled={!tempName.trim() || tempName.trim() === 'Agent'}
-              className="rounded-xl bg-[#00e5c0] px-3 py-2 text-xs font-black text-[#0f1419] transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="rounded-xl bg-val-accent px-3 py-2 text-xs font-black text-val-dark transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30"
             >
               {t.namePromptSave}
             </button>
@@ -2303,8 +2364,9 @@ function SessionSummary({ score, accuracy, hits, misses, avgRt, best, newHigh, t
       <button
         onClick={onAgain}
         disabled={!ready}
-        className="mt-4 w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-white/15 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:bg-white/10"
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-val-accent px-4 py-3 text-sm font-black uppercase tracking-wider text-val-dark transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
       >
+        <PlayIcon className="h-3.5 w-3.5" />
         {t.playAgain}
       </button>
     </div>
@@ -2332,11 +2394,9 @@ function HitMarker({ color }) {
 
 function SummaryRow({ label, value }) {
   return (
-    <div className="rounded-2xl bg-white/5 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-widest text-slate-400">
-        {label}
-      </p>
-      <p className="font-black tabular-nums text-white">{value}</p>
+    <div className="flex items-baseline justify-between py-2.5">
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="text-sm font-black tabular-nums text-white">{value}</p>
     </div>
   );
 }
