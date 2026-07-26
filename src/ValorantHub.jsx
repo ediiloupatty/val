@@ -600,18 +600,30 @@ function SkinTile({ skin, t }) {
 function InventoryView({ inventory, t }) {
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
-  // The sidebar duplicates the category tabs, so it stays hidden until the
-  // user has scrolled deep into the grid — then it appears (sticky) as a
-  // quick-nav / summary. Listens on the hub's scroll container.
-  const rootRef = useRef(null);
+  // The sidebar duplicates the category tabs, so it stays out of the way until
+  // those tabs have scrolled under the navbar — from that point the grid's top
+  // row is covered and the sticky summary takes over. Watched with a sentinel
+  // at the top of the grid rather than a pixel threshold, which was tied to one
+  // window size and only tripped several rows in.
+  const sentinelRef = useRef(null);
   const [showSidebar, setShowSidebar] = useState(false);
   useEffect(() => {
-    const scroller = rootRef.current?.closest('.overflow-y-auto');
-    if (!scroller) return;
-    const onScroll = () => setShowSidebar(scroller.scrollTop > 700);
-    onScroll();
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
+    const el = sentinelRef.current;
+    const scroller = el?.closest('.overflow-y-auto');
+    if (!el || !scroller) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        // Only when the sentinel leaves past the TOP edge — leaving under the
+        // bottom (a very short list) must not trip it.
+        const above = !entry.rootBounds || entry.boundingClientRect.top < entry.rootBounds.top;
+        setShowSidebar(!entry.isIntersecting && above);
+      },
+      // Matches the sticky navbar's height, so the panel arrives exactly as the
+      // first row of tiles slides underneath it.
+      { root: scroller, rootMargin: '-72px 0px 0px 0px', threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
   }, []);
   const skins = useMemo(
     () => inventory.skins.map((s) => ({ ...s, cat: weaponCategory(s.name) })),
@@ -629,7 +641,7 @@ function InventoryView({ inventory, t }) {
       (!q || s.name.toLowerCase().includes(q.toLowerCase()))
   );
   return (
-    <div ref={rootRef} className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-black uppercase tracking-wide sm:text-2xl">{t.tabs.inventory}</h2>
         <input
@@ -656,41 +668,50 @@ function InventoryView({ inventory, t }) {
         ))}
       </div>
 
+      {/* Trips the sidebar the moment the row above it goes under the navbar. */}
+      <div ref={sentinelRef} aria-hidden className="h-px w-full" />
+
       <div className="flex items-start gap-4">
-        {/* Sidebar: totals per category — only after scrolling deep into the
-            grid (the tabs above already cover filtering near the top). Sticky
-            so it's visible right where the user is. */}
-        {showSidebar && (
-        <aside className="sticky top-20 hidden w-44 shrink-0 flex-col gap-3 rounded-2xl border border-white/10 bg-val-panel p-4 lg:flex">
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.statSkins}</p>
-            <p className="mt-1 border-l-2 border-val-red pl-2 text-2xl font-black tabular-nums text-white">
-              {vp(skins.length)}
-            </p>
-          </div>
-          <div className="flex flex-col gap-1.5 border-t border-white/10 pt-3">
-            {cats.map((c) => (
-              <button
-                key={c}
-                onClick={() => setCat(cat === c ? 'all' : c)}
-                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                  cat === c ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>{c}</span>
-                <span className="tabular-nums text-slate-500">{counts[c]}</span>
-              </button>
-            ))}
-          </div>
-          <div className="border-t border-white/10 pt-3">
-            <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.invStatValue}</p>
-            <p className="mt-1 flex items-center gap-1.5">
-              <img src={VP_ICON} alt="VP" className="h-4 w-4" />
-              <span className="text-base font-black tabular-nums text-white">{vp(inventory.totalValueVp)}</span>
-            </p>
-          </div>
-        </aside>
-        )}
+        {/* Sidebar column. The slot is reserved from the first paint on large
+            screens even while the panel is invisible: mounting it on scroll
+            used to steal 11rem from the grid, resizing every tile mid-scroll.
+            Now only the panel itself fades in — the grid keeps one width. */}
+        <div className="sticky top-20 hidden w-44 shrink-0 lg:block">
+          <aside
+            aria-hidden={!showSidebar}
+            className={`flex flex-col gap-3 rounded-2xl border border-white/10 bg-val-panel p-4 transition-all duration-300 ease-out motion-reduce:transition-none ${
+              showSidebar ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'
+            }`}
+          >
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.statSkins}</p>
+              <p className="mt-1 border-l-2 border-val-red pl-2 text-2xl font-black tabular-nums text-white">
+                {vp(skins.length)}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5 border-t border-white/10 pt-3">
+              {cats.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCat(cat === c ? 'all' : c)}
+                  className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                    cat === c ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>{c}</span>
+                  <span className="tabular-nums text-slate-500">{counts[c]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">{t.invStatValue}</p>
+              <p className="mt-1 flex items-center gap-1.5">
+                <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+                <span className="text-base font-black tabular-nums text-white">{vp(inventory.totalValueVp)}</span>
+              </p>
+            </div>
+          </aside>
+        </div>
 
         {/* Grid */}
         <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
