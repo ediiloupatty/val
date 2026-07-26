@@ -452,7 +452,7 @@ function HubNav({ t, identity, walletVp, tab, goTab, onExit, onLogout }) {
 
   return (
     <div className="sticky top-0 z-30 border-b border-white/10 bg-val-dark/90 backdrop-blur-md">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:h-16 sm:gap-3 sm:px-8">
+      <div className="relative mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:h-16 sm:gap-3 sm:px-8">
         <button
           onClick={onExit}
           aria-label={t.back}
@@ -464,19 +464,25 @@ function HubNav({ t, identity, walletVp, tab, goTab, onExit, onLogout }) {
           <span className="text-val-red">Valo</span> Shop
         </p>
 
-        {/* Centered tabs (desktop) */}
-        <nav className="hidden flex-1 items-center justify-center md:flex">
-          {tabs.map(([key, label]) => tabBtn(key, label, 'h-14 sm:h-16'))}
-        </nav>
-        <div className="flex-1 md:hidden" />
-
-        {/* VP balance */}
-        {walletVp != null && (
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-            <img src={VP_ICON} alt="VP" className="h-4 w-4" />
-            <span className="text-xs font-black tabular-nums text-white">{vp(walletVp)}</span>
+        {/* Centered tabs (desktop). Positioned against the bar itself rather
+            than laid out between the two side blocks: the wallet pill and the
+            profile name only reach their real width once the overview lands,
+            and an in-flow centre would slide sideways when they do. */}
+        <nav className="pointer-events-none absolute inset-y-0 left-0 right-0 hidden items-center justify-center md:flex">
+          <span className="pointer-events-auto flex h-full items-center">
+            {tabs.map(([key, label]) => tabBtn(key, label, 'h-14 sm:h-16'))}
           </span>
-        )}
+        </nav>
+        <div className="flex-1" />
+
+        {/* VP balance — always rendered (a dash until the wallet arrives) so
+            the row keeps its width from the first paint. */}
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+          <img src={VP_ICON} alt="VP" className="h-4 w-4" />
+          <span className="text-xs font-black tabular-nums text-white">
+            {walletVp != null ? vp(walletVp) : '—'}
+          </span>
+        </span>
 
         {/* Profile chip + dropdown */}
         <div ref={menuRef} className="relative shrink-0">
@@ -492,8 +498,11 @@ function HubNav({ t, identity, walletVp, tab, goTab, onExit, onLogout }) {
                 {(identity?.displayName || t.playerFallback).charAt(0).toUpperCase()}
               </span>
             )}
-            <span className="hidden min-w-0 text-left leading-tight sm:block">
-              <span className="block max-w-[110px] truncate text-xs font-black text-white">
+            {/* Fixed width: the name grows from the "Pemain" placeholder to the
+                real Riot ID once the overview resolves, and a shrink-to-fit
+                chip would jump on every load. */}
+            <span className="hidden text-left leading-tight sm:block sm:w-[110px]">
+              <span className="block truncate text-xs font-black text-white">
                 {identity?.displayName?.split('#')[0] || t.playerFallback}
               </span>
               <span className="block text-[9px] font-bold uppercase tracking-wider text-val-accent">{t.online}</span>
@@ -964,8 +973,11 @@ export default function ValorantHub({ onExit, onIdentity, onLogout, lang = 'id',
     setSession(ssid); // triggers the overview effect, which validates + persists
   };
 
+  // scrollbar-gutter keeps the gutter reserved while a tab is still loading, so
+  // the page doesn't shift sideways the moment its content grows tall enough to
+  // scroll.
   return (
-    <div className="h-[100dvh] w-full overflow-y-auto overflow-x-hidden bg-val-dark text-white">
+    <div className="h-[100dvh] w-full overflow-y-auto overflow-x-hidden bg-val-dark text-white [scrollbar-gutter:stable]">
       {/* Sticky navbar (logged in only) — full width, above the content column */}
       {session && (
         <HubNav
