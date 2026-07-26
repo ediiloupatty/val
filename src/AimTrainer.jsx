@@ -481,7 +481,12 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     let trackingSwitchTimes  = [];
 
     // --- Hit flash point light (reused across hits) ---------------------------
-    const hitLight = new THREE.PointLight(0xffffff, 0, 7);
+    // Brighter and slightly longer-lived than a pure impact cue needs to be:
+    // the point of it is that the floor and neighbouring targets visibly catch
+    // the light, which is what sells the shot as happening in the room.
+    const HIT_LIGHT_PEAK = 9;
+    const HIT_LIGHT_TIME = 0.18;
+    const hitLight = new THREE.PointLight(0xffffff, 0, 10);
     scene.add(hitLight);
     let hitLightTimer = 0;
 
@@ -508,6 +513,48 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         });
         scene.add(mesh);
       }
+    }
+
+    // --- Impact flash shell ---------------------------------------------------
+    // An additive sphere that bursts out of the target on impact and fades. Unit
+    // radius, scaled per hit, so every target size shares one geometry. Additive
+    // + depthWrite:false so it reads as light rather than as another object —
+    // it brightens whatever is behind it instead of occluding it.
+    const flashGeo = new THREE.SphereGeometry(1, 16, 12);
+    const impactFlashes = []; // { mesh, age, maxAge, from, to }
+
+    function spawnImpactFlash(pos, hexColor, radius) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: hexColor,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(flashGeo, mat);
+      mesh.position.copy(pos);
+      const from = radius * 1.05;
+      mesh.scale.setScalar(from);
+      impactFlashes.push({ mesh, age: 0, maxAge: 0.22, from, to: radius * 2.6 });
+      scene.add(mesh);
+    }
+
+    // Everything that fires the instant a target dies, from either the shooting
+    // path or a tracking kill: the ball goes white-hot from the inside, a glow
+    // shell expands around it, debris scatters, and a point light throws the
+    // colour onto the surrounding geometry for a frame or two.
+    function playImpact(mesh, hexColor) {
+      const radius = hitRadii.get(mesh) || mesh.userData.radius || 0.28;
+      // White core, not the target's own colour: a hit should look like a burst
+      // of light, and the shell around it carries the colour.
+      mesh.material.emissive.setHex(0xffffff);
+      mesh.material.emissiveIntensity = 3.4;
+      spawnImpactFlash(mesh.position, hexColor, radius);
+      spawnHitParticles(mesh.position, hexColor);
+      hitLight.color.setHex(hexColor);
+      hitLight.position.copy(mesh.position);
+      hitLight.intensity = HIT_LIGHT_PEAK;
+      hitLightTimer = HIT_LIGHT_TIME;
     }
 
     function fireViewmodel() {
@@ -679,6 +726,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         dtg.mesh.material.dispose();
       }
       dyingTargets.length = 0;
+      for (const f of impactFlashes) {
+        scene.remove(f.mesh);
+        f.mesh.material.dispose();
+      }
+      impactFlashes.length = 0;
+      hitLight.intensity = 0;
+      hitLightTimer = 0;
     }
 
     function fillTargets() {
@@ -802,15 +856,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         const idx = targets.indexOf(hitMesh);
         if (idx !== -1) targets.splice(idx, 1);
 
-        // Hit particle burst — scatter from target center.
-        const hitColor = hitMesh.material.color.getHex();
-        spawnHitParticles(hitMesh.position, hitColor);
-
-        // Hit flash — brief point light at impact position.
-        hitLight.color.setHex(hitColor);
-        hitLight.position.copy(hitMesh.position);
-        hitLight.intensity = 4;
-        hitLightTimer = 0.12;
+        playImpact(hitMesh, hitMesh.material.color.getHex());
 
         hitMesh.userData.dying = true;
         dyingTargets.push({ mesh: hitMesh, age: 0 });
@@ -1051,12 +1097,7 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
             trackingScoreAccum += 100 * dt * D.scoreMulti * sizeMod * trackingCombo;
 
             if (tgt.userData.health <= 0) {
-              const killColor = tgt.material.color.getHex();
-              spawnHitParticles(tgt.position, killColor);
-              hitLight.color.setHex(killColor);
-              hitLight.position.copy(tgt.position);
-              hitLight.intensity = 4;
-              hitLightTimer = 0.12;
+              playImpact(tgt, tgt.material.color.getHex());
               tgt.userData.dying = true;
               dyingTargets.push({ mesh: tgt, age: 0 });
               targets.splice(targets.indexOf(tgt), 1);
@@ -1106,8 +1147,29 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
           dtg.mesh.material.dispose();
           dyingTargets.splice(i, 1);
         } else {
-          const s = Math.max(0, 1 - Math.pow(dtg.age / 0.15, 3));
+          const frac = dtg.age / 0.15;
+          const s = Math.max(0, 1 - Math.pow(frac, 3));
           dtg.mesh.scale.set(s, s, s);
+          // The white-hot core set on impact cools as the ball collapses, so the
+          // last thing seen is a bright pinpoint rather than a shape vanishing.
+          dtg.mesh.material.emissiveIntensity = 3.4 * (1 - frac) * (1 - frac);
+        }
+      }
+
+      // --- Impact flash shells ---
+      for (let i = impactFlashes.length - 1; i >= 0; i--) {
+        const f = impactFlashes[i];
+        f.age += dt;
+        if (f.age >= f.maxAge) {
+          scene.remove(f.mesh);
+          f.mesh.material.dispose();
+          impactFlashes.splice(i, 1);
+        } else {
+          const frac = f.age / f.maxAge;
+          // Fast out, slow settle — an explosion decelerates, it doesn't coast.
+          const eased = 1 - Math.pow(1 - frac, 3);
+          f.mesh.scale.setScalar(f.from + (f.to - f.from) * eased);
+          f.mesh.material.opacity = 0.9 * Math.pow(1 - frac, 2);
         }
       }
 
@@ -1133,7 +1195,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       // --- Hit flash light fade ---
       if (hitLightTimer > 0) {
         hitLightTimer -= dt;
-        hitLight.intensity = Math.max(0, (hitLightTimer / 0.12) * 4);
+        // Squared falloff: the flash punches at full brightness and drops away
+        // quickly, instead of lingering as a soft glow.
+        const k = Math.max(0, hitLightTimer / HIT_LIGHT_TIME);
+        hitLight.intensity = HIT_LIGHT_PEAK * k * k;
         if (hitLightTimer <= 0) hitLight.intensity = 0;
       }
 
@@ -1250,6 +1315,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       for (const p of hitParticles) { scene.remove(p.mesh); p.mesh.material.dispose(); }
       hitParticles.length = 0;
       particleGeo.dispose();
+      // clearTargets() already emptied impactFlashes; only the shared geometry
+      // is left to release.
+      flashGeo.dispose();
       renderer.dispose();
       if (canvas.parentNode === mount) mount.removeChild(canvas);
       engine.current = null;
