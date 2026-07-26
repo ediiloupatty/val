@@ -489,9 +489,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     const HIT_LIGHT_TIME = 0.09;   // seconds for that light to fall to zero
     const HIT_LIGHT_RANGE = 5;     // how far the flash reaches into the room
     const HIT_CORE_EMISSIVE = 1.4; // how hot the ball's own material goes
-    const HIT_SHELL_GROWTH = 1.45; // shell's final size, as a multiple of the radius
-    const HIT_SHELL_OPACITY = 0.3; // shell's opacity at birth
-    const HIT_SHELL_TIME = 0.1;    // seconds for the shell to expand and vanish
 
     const hitLight = new THREE.PointLight(0xffffff, 0, HIT_LIGHT_RANGE);
     scene.add(hitLight);
@@ -522,47 +519,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       }
     }
 
-    // --- Impact flash shell ---------------------------------------------------
-    // A thin additive sphere that swells just past the target and is gone within
-    // a tenth of a second. Unit radius, scaled per hit, so every target size
-    // shares one geometry. Additive + depthWrite:false so it reads as light
-    // rather than as another object — it brightens what's behind it instead of
-    // occluding it.
-    const flashGeo = new THREE.SphereGeometry(1, 16, 12);
-    const impactFlashes = []; // { mesh, age, maxAge, from, to }
-
-    function spawnImpactFlash(pos, hexColor, radius) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: hexColor,
-        transparent: true,
-        opacity: HIT_SHELL_OPACITY,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const mesh = new THREE.Mesh(flashGeo, mat);
-      mesh.position.copy(pos);
-      const from = radius * 1.02;
-      mesh.scale.setScalar(from);
-      impactFlashes.push({
-        mesh,
-        age: 0,
-        maxAge: HIT_SHELL_TIME,
-        from,
-        to: radius * HIT_SHELL_GROWTH,
-      });
-      scene.add(mesh);
-    }
-
     // Everything that fires the instant a target dies, from either the shooting
-    // path or a tracking kill: the ball brightens from the inside, a faint shell
-    // pops around it, debris scatters, and a short point light throws the colour
-    // onto whatever is nearby.
+    // path or a tracking kill: the ball brightens from the inside, debris
+    // scatters, and a short point light throws the colour onto whatever is
+    // nearby. No glow shell around the ball — an additive sphere over this dark
+    // background read as a smudge sitting on the target rather than as light.
     function playImpact(mesh, hexColor) {
-      const radius = hitRadii.get(mesh) || mesh.userData.radius || 0.28;
-      // Brighten the ball's own colour rather than blowing it out to white — a
-      // white core turned the hit into a flashbang at this size on screen.
       mesh.material.emissiveIntensity = HIT_CORE_EMISSIVE;
-      spawnImpactFlash(mesh.position, hexColor, radius);
       spawnHitParticles(mesh.position, hexColor);
       hitLight.color.setHex(hexColor);
       hitLight.position.copy(mesh.position);
@@ -739,11 +702,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         dtg.mesh.material.dispose();
       }
       dyingTargets.length = 0;
-      for (const f of impactFlashes) {
-        scene.remove(f.mesh);
-        f.mesh.material.dispose();
-      }
-      impactFlashes.length = 0;
       hitLight.intensity = 0;
       hitLightTimer = 0;
     }
@@ -1169,23 +1127,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
         }
       }
 
-      // --- Impact flash shells ---
-      for (let i = impactFlashes.length - 1; i >= 0; i--) {
-        const f = impactFlashes[i];
-        f.age += dt;
-        if (f.age >= f.maxAge) {
-          scene.remove(f.mesh);
-          f.mesh.material.dispose();
-          impactFlashes.splice(i, 1);
-        } else {
-          const frac = f.age / f.maxAge;
-          // Fast out, slow settle — an explosion decelerates, it doesn't coast.
-          const eased = 1 - Math.pow(1 - frac, 3);
-          f.mesh.scale.setScalar(f.from + (f.to - f.from) * eased);
-          f.mesh.material.opacity = HIT_SHELL_OPACITY * Math.pow(1 - frac, 2);
-        }
-      }
-
       // --- Hit particle burst update ---
       for (let i = hitParticles.length - 1; i >= 0; i--) {
         const p = hitParticles[i];
@@ -1328,9 +1269,6 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       for (const p of hitParticles) { scene.remove(p.mesh); p.mesh.material.dispose(); }
       hitParticles.length = 0;
       particleGeo.dispose();
-      // clearTargets() already emptied impactFlashes; only the shared geometry
-      // is left to release.
-      flashGeo.dispose();
       renderer.dispose();
       if (canvas.parentNode === mount) mount.removeChild(canvas);
       engine.current = null;
