@@ -56,16 +56,26 @@ const LIGHT = (() => {
   const weak = (nav.deviceMemory && nav.deviceMemory <= 2) ||
                (nav.hardwareConcurrency && nav.hardwareConcurrency <= 2);
   return {
-    video: VIDEO_BG && !reduced && !saveData && !weak && !touchOnly,
+    // The video is the landing's identity, so it is not gated on guesses about
+    // the hardware or on the reduced-motion setting — plenty of desktops turn
+    // OS animations off for performance and would silently lose it. Only the
+    // two cases where it genuinely cannot work opt out: no mouse (phones and
+    // tablets, which also pay for the bytes) and an explicitly metered or 2G
+    // connection. It streams and is released the moment the page is left, so it
+    // no longer costs what it used to.
+    video: VIDEO_BG && !saveData && !touchOnly,
     wind: !reduced && !weak && !touchOnly,
     parallax: !reduced && !touchOnly,
   };
 })();
 
-// True when this visit will play a video at all. Mobile, data-saver, weak
-// hardware and reduced-motion get a still wallpaper instead.
-function willLoadVideo(isMobile) {
-  return LIGHT.video && !isMobile;
+// True when this visit will play a video at all. Deliberately does not consult
+// App's `isMobile`, which also reports true for a narrow window, a missing
+// pointer-lock API or a `pointer: coarse` primary input — a touchscreen desktop
+// hits that last one and would lose the video for no reason. LIGHT's
+// any-pointer test is the accurate version of the same question.
+function willLoadVideo() {
+  return LIGHT.video;
 }
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
@@ -395,7 +405,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   // back — the visitor can press PLAY while the background is still loading.
   useEffect(() => {
     let alive = true;
-    const wantsVideo = willLoadVideo(isMobile);
+    const wantsVideo = willLoadVideo();
 
     (async () => {
       const files = await fetchBackgrounds();
@@ -427,6 +437,14 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
     if (!videoUrl) return;
     const el = videoElRef.current;
     if (!el) return;
+
+    // Kick playback by hand rather than trusting the autoPlay attribute alone.
+    // React assigns `muted` as a DOM property, and if the browser evaluates
+    // autoplay before that lands it sees an unmuted video and blocks it — the
+    // element then sits there loaded and paused, and the reveal never fires.
+    el.muted = true;
+    el.play().catch(() => {});
+
     const onVisibility = () => {
       if (document.hidden) el.pause();
       else el.play().catch(() => {});
@@ -510,6 +528,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
             playsInline
             preload="auto"
             disablePictureInPicture
+            onCanPlay={() => setVideoReady(true)}
             onPlaying={() => setVideoReady(true)}
             onError={() => { setVideoUrl(null); setVideoReady(false); }}
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
