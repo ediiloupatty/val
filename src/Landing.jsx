@@ -32,61 +32,34 @@ const LB_MODE_TABS = [
 // and slow connections get a wallpaper from the same bucket instead.
 const VIDEO_BG = true;
 
-// How long the skeleton is allowed to hold the page back. The video is fully
-// downloaded before the landing appears, but a stalled or very slow connection
-// must not strand the visitor on a skeleton forever — past this the page opens
-// and the video fades in whenever it finishes.
-const BG_LOAD_TIMEOUT_MS = 20000;
+// One-time capability probe deciding how much decoration this device gets.
+// Everything decorative (looping video, wind streaks, cursor parallax) is
+// switched off on weak hardware, metered connections and for visitors who asked
+// for reduced motion — the landing then costs a still image and static DOM.
+const LIGHT = (() => {
+  if (typeof window === 'undefined') {
+    return { video: false, wind: false, parallax: false };
+  }
+  const nav = navigator;
+  const conn = nav.connection || null;
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
+  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches || false;
+  const saveData = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')));
+  // deviceMemory/hardwareConcurrency are absent on Safari — an unknown device is
+  // treated as capable so desktop Safari keeps the full look.
+  const weak = (nav.deviceMemory && nav.deviceMemory <= 4) ||
+               (nav.hardwareConcurrency && nav.hardwareConcurrency <= 4);
+  return {
+    video: VIDEO_BG && !reduced && !saveData && !weak && !coarse,
+    wind: !reduced && !weak && !coarse,
+    parallax: !reduced && !coarse,
+  };
+})();
 
-// True when this visit will wait on a video at all. Mobile, data-saver and 2G
-// never download one, so they must not see the loading gate.
+// True when this visit will play a video at all. Mobile, data-saver, weak
+// hardware and reduced-motion get a still wallpaper instead.
 function willLoadVideo(isMobile) {
-  if (!VIDEO_BG || isMobile) return false;
-  const conn = typeof navigator !== 'undefined' ? navigator.connection : null;
-  if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return false;
-  return true;
-}
-
-// Loading gate. Mirrors the landing's real layout — logo, menu column, profile
-// chip — so nothing jumps when the page swaps in. Skeleton rather than a
-// spinner: it reads as "the page is arriving", not "something is stuck".
-function LandingSkeleton({ progress }) {
-  const block = 'animate-pulse rounded bg-white/5';
-  return (
-    <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark" role="status" aria-label="Loading">
-      <div className="absolute left-0 right-0 top-0 flex items-center justify-between gap-3 px-6 py-4 md:px-12 md:py-5">
-        <div className="flex items-center gap-2.5 md:gap-3">
-          <div className={`h-9 w-9 rounded-2xl md:h-11 md:w-11 ${block}`} />
-          <div className="flex flex-col gap-1.5">
-            <div className={`h-3.5 w-24 ${block}`} />
-            <div className={`h-2 w-36 ${block}`} />
-          </div>
-        </div>
-        <div className={`h-10 w-32 rounded-2xl md:w-44 ${block}`} />
-      </div>
-
-      <div className="absolute left-6 top-1/2 flex w-60 -translate-y-1/2 flex-col gap-1.5 md:left-12 md:w-64">
-        <div className={`h-[70px] rounded-2xl ${block}`} />
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className={`h-12 rounded-xl ${block}`} />
-        ))}
-      </div>
-
-      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-2 md:bottom-8 md:right-12">
-        <div className={`h-3 w-28 ${block}`} />
-        <div className={`h-3 w-20 ${block}`} />
-      </div>
-
-      {/* Hairline progress along the bottom edge — honest feedback on a long
-          download without turning the skeleton into a loading screen. */}
-      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/5">
-        <div
-          className="h-full bg-val-accent transition-[width] duration-200 ease-out"
-          style={{ width: `${Math.max(2, progress)}%` }}
-        />
-      </div>
-    </div>
-  );
+  return LIGHT.video && !isMobile;
 }
 
 // Apology banner auto-expires one month after the cleanup (2026-06-14). It shows
@@ -123,16 +96,12 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   const [myRankInfo, setMyRankInfo] = useState(null); // { rank, score } when outside top 10
   const [headerRank, setHeaderRank] = useState(null); // { rank, score } for the header profile card
   const [donations, setDonations] = useState([]); // recent Saweria supporters
-  // R2-hosted video background (desktop only), held as a blob URL once fully
-  // downloaded; null = no video this visit.
+  // R2-hosted video background (capable desktops only), streamed by the <video>
+  // element straight from its URL; null = no video this visit.
   const [videoUrl, setVideoUrl] = useState(null);
   const [videoReady, setVideoReady] = useState(false);
-  // R2 wallpaper used where a video isn't downloaded (mobile / data-saver).
+  // R2 wallpaper — painted on every device, and the layer the video fades over.
   const [posterUrl, setPosterUrl] = useState(null);
-  // The landing stays behind the skeleton until its background is in hand.
-  // Visits that never fetch a video skip the gate entirely.
-  const [bgReady, setBgReady] = useState(() => !willLoadVideo(isMobile));
-  const [bgProgress, setBgProgress] = useState(0);
   // Landing announcement banner: shows until NOTICE_EXPIRY, then auto-hides for
   // everyone. Clicking ✕ dismisses it for good on this device — we remember the
   // dismissed banner by its expiry, so a future announcement (new NOTICE_EXPIRY)
@@ -160,6 +129,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
 
   // ---------- 3D parallax refs (no React state — driven by rAF) ----------
   const bgRef     = useRef(null); // background image layer
+  const videoElRef = useRef(null); // <video> node, paused while the tab is hidden
   const rafRef    = useRef(null);
   const targetRef = useRef({ x: 0.5, y: 0.5 }); // raw mouse (0-1)
   const curRef    = useRef({ x: 0.5, y: 0.5 }); // lerped position
@@ -173,12 +143,10 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   const lbModeRef = useRef(null);
 
   useEffect(() => {
-    const onMouseMove = (e) => {
-      targetRef.current = {
-        x: e.clientX / window.innerWidth,
-        y: e.clientY / window.innerHeight,
-      };
-    };
+    // Touch devices have no cursor to follow and reduced-motion users asked not
+    // to be moved — both skip the loop entirely instead of burning a frame
+    // callback forever for an effect that can never fire.
+    if (!LIGHT.parallax) return;
 
     // Lerp factor — lower = smoother / more lag (feels "heavy" and cinematic).
     const LERP = 0.055;
@@ -194,9 +162,14 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       c.x += dx;
       c.y += dy;
 
-      // Only write to the DOM when the position is still moving — skips the
-      // style recalc on every frame once the cursor has been still long enough.
-      if (bgRef.current && (Math.abs(dx) > 0.00005 || Math.abs(dy) > 0.00005)) {
+      // Once the layer has caught up with the cursor there is nothing left to
+      // animate, so the loop parks itself instead of running at display rate
+      // over a still image. The next mousemove restarts it.
+      if (Math.abs(dx) < 0.00005 && Math.abs(dy) < 0.00005) {
+        rafRef.current = null;
+        return;
+      }
+      if (bgRef.current) {
         const tx = (c.x - 0.5) * -MAX_X * 2;
         const ty = (c.y - 0.5) * -MAX_Y * 2;
         bgRef.current.style.transform = `scale(1.12) translate(${tx}px, ${ty}px)`;
@@ -205,11 +178,18 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    window.addEventListener('mousemove', onMouseMove);
-    rafRef.current = requestAnimationFrame(tick);
+    const onMouseMove = (e) => {
+      targetRef.current = {
+        x: e.clientX / window.innerWidth,
+        y: e.clientY / window.innerHeight,
+      };
+      if (rafRef.current === null) rafRef.current = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
-      cancelAnimationFrame(rafRef.current);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, []);
   // -----------------------------------------------------------------------
@@ -402,85 +382,49 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
   }, [deviceId]);
 
   // "Background of the day": list what's in the R2 bucket and pick one entry
-  // deterministically per day. Desktop downloads the whole video before the
-  // landing is revealed, streaming it through a reader so the skeleton can show
-  // real progress; mobile and data-saver take a wallpaper from the same bucket
-  // and never wait.
+  // deterministically per day. The wallpaper is applied immediately on every
+  // device so the landing paints on the first frame; where a video is wanted it
+  // streams straight into the <video> element and cross-fades in over that
+  // wallpaper whenever enough of it has arrived. Nothing here holds the page
+  // back — the visitor can press PLAY while the background is still loading.
   useEffect(() => {
     let alive = true;
-    let objectUrl = null;
     const wantsVideo = willLoadVideo(isMobile);
-
-    // Safety net: reveal the page regardless once the budget is spent.
-    const failsafe = wantsVideo
-      ? setTimeout(() => { if (alive) setBgReady(true); }, BG_LOAD_TIMEOUT_MS)
-      : null;
 
     (async () => {
       const files = await fetchBackgrounds();
       if (!alive) return;
       const pick = (list) => list[Math.floor(Date.now() / 86400000) % list.length];
 
-      if (!wantsVideo) {
-        const stills = files.filter((u) => /\.(webp|jpe?g|png)(\?|$)/i.test(u));
-        if (stills.length) setPosterUrl(pick(stills));
-        setBgReady(true);
-        return;
-      }
-
       const images = files.filter((u) => /\.(webp|jpe?g|png)(\?|$)/i.test(u));
-      const vids = files.filter((u) => /\.(mp4|webm)(\?|$)/i.test(u));
-      if (!vids.length) {
-        if (images.length) setPosterUrl(pick(images));
-        setBgReady(true);
-        return;
-      }
+      if (images.length) setPosterUrl(pick(images));
+      if (!wantsVideo) return;
 
-      try {
-        const res = await fetch(pick(vids));
-        if (!res.ok || !res.body) throw new Error('bg fetch failed');
-        const total = Number(res.headers.get('Content-Length')) || 0;
-        const reader = res.body.getReader();
-        const chunks = [];
-        let received = 0;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (!alive) return reader.cancel();
-          chunks.push(value);
-          received += value.length;
-          // Held below 100 until the blob exists, so the bar can't read
-          // "finished" while the page is still assembling.
-          if (total) setBgProgress(Math.min(99, Math.round((received / total) * 100)));
-        }
-        objectUrl = URL.createObjectURL(new Blob(chunks, { type: res.headers.get('Content-Type') || 'video/mp4' }));
-        if (!alive) return URL.revokeObjectURL(objectUrl);
-        setBgProgress(100);
-        setVideoUrl(objectUrl);
-      } catch {
-        // Video unavailable — open the landing on a wallpaper rather than on
-        // an empty dark page.
-        if (alive && images.length) setPosterUrl(pick(images));
-      }
-      if (alive) setBgReady(true);
+      const vids = files.filter((u) => /\.(mp4|webm)(\?|$)/i.test(u));
+      if (vids.length) setVideoUrl(pick(vids));
     })();
 
-    return () => {
-      alive = false;
-      if (failsafe) clearTimeout(failsafe);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    return () => { alive = false; };
     // Deliberately mount-only. `isMobile` flips whenever a resize crosses the
-    // breakpoint, and re-running would revoke the blob URL the <video> is
-    // playing from — the background would blank and download all over again.
+    // breakpoint, and re-running would restart the video download from zero.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const formatRp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`;
+  // A hidden tab keeps decoding video frames in several browsers — pure battery
+  // and CPU burn behind a background tab. Pause while away, resume on return.
+  useEffect(() => {
+    if (!videoUrl) return;
+    const onVisibility = () => {
+      const el = videoElRef.current;
+      if (!el) return;
+      if (document.hidden) el.pause();
+      else el.play().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [videoUrl]);
 
-  // Every hook above this line runs on both paths — the gate is the last thing
-  // before the tree, so it can't change the hook order.
-  if (!bgReady) return <LandingSkeleton progress={bgProgress} />;
+  const formatRp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`;
 
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-val-dark font-sans text-white select-none">
@@ -516,24 +460,28 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
         style={{
           // Oversized by 12% on each side so the translate never reveals a gap.
           inset: '-8%',
-          // Only the no-video path paints a wallpaper here; when a video is
-          // downloaded it arrives complete, so there is nothing to cover.
+          // Painted on every visit: it is the background on its own where no
+          // video plays, and the thing the video fades in over where one does.
           backgroundImage: posterUrl ? `url('${posterUrl}')` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center right',
           willChange: 'transform',
         }}
       >
-        {/* Background video (manually uploaded to R2), already fully downloaded
-            by the time this renders. Lives inside the parallax layer so it
-            shifts with the mouse. */}
+        {/* Background video (manually uploaded to R2), streamed by the element
+            itself rather than buffered in JS — playback starts on the first few
+            hundred KB instead of the whole file. Lives inside the parallax layer
+            so it shifts with the mouse. */}
         {videoUrl && (
           <video
+            ref={videoElRef}
             src={videoUrl}
             autoPlay
             muted
             loop
             playsInline
+            preload="auto"
+            disablePictureInPicture
             onPlaying={() => setVideoReady(true)}
             onError={() => { setVideoUrl(null); setVideoReady(false); }}
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
@@ -1065,11 +1013,12 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
 }
 
 function WindFX() {
-  // Pre-compute a set of streaks with varied position / length / speed so the
-  // gusts feel layered rather than uniform.
+  // Every streak is a separately composited, permanently animating layer, so
+  // the count is the cost. Twelve still reads as layered gusts; weak devices,
+  // phones and reduced-motion visitors get none at all.
   const streaks = useMemo(
     () =>
-      Array.from({ length: 22 }, () => ({
+      Array.from({ length: LIGHT.wind ? 12 : 0 }, () => ({
         top: Math.random() * 100, // vertical position (%)
         width: 120 + Math.random() * 280, // streak length (px)
         height: Math.random() < 0.25 ? 3 : Math.random() < 0.6 ? 2 : 1, // thickness
@@ -1079,6 +1028,7 @@ function WindFX() {
       })),
     []
   );
+  if (!streaks.length) return null;
   return (
     <div
       className="pointer-events-none absolute -inset-[20%] z-[1] overflow-hidden"

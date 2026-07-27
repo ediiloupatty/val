@@ -115,7 +115,16 @@ input[type='range']::-moz-range-thumb:hover {
   height: 2px;
   border-radius: 9999px;
   background: linear-gradient(90deg, transparent, rgba(200,232,255,0.95), transparent);
-  filter: blur(0.4px);
   will-change: transform, opacity;
   animation: wind-streak linear infinite;
+}
+
+/* Nothing decorative animates for visitors who asked for reduced motion — the
+   JS probe already drops the wind and parallax, this covers the CSS-only
+   loops (waving hand, skeleton pulse) that JS never sees. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-wave,
+  .animate-pulse {
+    animation: none;
+  }
 }
