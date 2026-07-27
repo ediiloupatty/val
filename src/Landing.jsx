@@ -43,16 +43,22 @@ const LIGHT = (() => {
   const nav = navigator;
   const conn = nav.connection || null;
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
-  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches || false;
+  // A mouse or trackpad anywhere on the device is the real desktop signal.
+  // `pointer: coarse` on its own also matches touchscreen laptops, which are
+  // perfectly capable of a video background.
+  const touchOnly = !(window.matchMedia?.('(any-pointer: fine)')?.matches ?? true);
   const saveData = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')));
-  // deviceMemory/hardwareConcurrency are absent on Safari — an unknown device is
+  // Only genuinely tiny machines opt out. Chrome reports deviceMemory 4 and
+  // four cores on plenty of ordinary desktops, so excluding those hid the video
+  // from most visitors who should have had it. deviceMemory and
+  // hardwareConcurrency are also absent on Safari — an unknown device is
   // treated as capable so desktop Safari keeps the full look.
-  const weak = (nav.deviceMemory && nav.deviceMemory <= 4) ||
-               (nav.hardwareConcurrency && nav.hardwareConcurrency <= 4);
+  const weak = (nav.deviceMemory && nav.deviceMemory <= 2) ||
+               (nav.hardwareConcurrency && nav.hardwareConcurrency <= 2);
   return {
-    video: VIDEO_BG && !reduced && !saveData && !weak && !coarse,
-    wind: !reduced && !weak && !coarse,
-    parallax: !reduced && !coarse,
+    video: VIDEO_BG && !reduced && !saveData && !weak && !touchOnly,
+    wind: !reduced && !weak && !touchOnly,
+    parallax: !reduced && !touchOnly,
   };
 })();
 
