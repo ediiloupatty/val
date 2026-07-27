@@ -203,6 +203,10 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
   const popupTimeouts = useRef([]);
   // DOM refs for effects written directly from the rAF loop (zero re-render overhead)
   const vigRef   = useRef(null); // vignette overlay element
+  // Last vignette values written to that element. The overlay is idle almost
+  // all the time, and re-writing "no flash" on every single frame costs a style
+  // recalc plus a fresh box-shadow string at display rate for nothing.
+  const vigLastRef = useRef({ o: -1, c: '' });
   const bloomRef = useRef(0);   // current bloom amount (passed to Crosshair via ref)
 
   const shots = hits + misses;
@@ -317,21 +321,33 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     };
     setFov();
 
+    // Rendering cost scales with pixels, so the resolution ceiling is picked
+    // from the device rather than fixed at 2x: a 4x pixel budget is what makes
+    // the arena stutter on laptops and integrated GPUs.
+    const lowEndGpu = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+                      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+    const dprCap = lowEndGpu ? 1 : 1.5;
+    const startDpr = Math.min(window.devicePixelRatio || 1, dprCap);
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      // MSAA is redundant once we render above 1x — the extra samples cost
+      // fill rate to smooth edges that supersampling already covers.
+      antialias: startDpr < 1.5,
       powerPreference: 'high-performance',
       desynchronized: true, // Bypasses OS compositor for minimum latency
     });
     renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(startDpr);
     mount.appendChild(renderer.domElement);
     const canvas = renderer.domElement;
     canvas.style.display = 'block';
     canvas.style.cursor = 'crosshair';
 
     // --- Minimal environment: dark floor + back/side walls --------------------
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1d2b36, roughness: 1 });
-    const wallMat  = new THREE.MeshStandardMaterial({ color: 0x1a2630, roughness: 1 });
+    // Lambert, not Standard: these surfaces are fully rough and non-metallic, so
+    // the PBR shader's specular/BRDF work produces nothing visible while costing
+    // real fragment time — and the floor and walls are most of the screen.
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x1d2b36 });
+    const wallMat  = new THREE.MeshLambertMaterial({ color: 0x1a2630 });
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -950,6 +966,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
     let lastFrame = performance.now();
     let fpsFrames = 0;
     let fpsAccum = 0;
+    // Adaptive resolution state — see the FPS block inside animate().
+    let curDpr = startDpr;
+    let lowFpsWindows = 0;
     function animate() {
       animId = requestAnimationFrame(animate);
       // Guard: if cleanup already ran (engine.current = null), bail immediately.
@@ -995,9 +1014,25 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       fpsAccum += dt;
       fpsFrames += 1;
       if (fpsAccum >= 0.25) {
-        engine.current.onFps(Math.round(fpsFrames / fpsAccum));
+        const fps = Math.round(fpsFrames / fpsAccum);
+        engine.current.onFps(fps);
         fpsFrames = 0;
         fpsAccum = 0;
+
+        // Adaptive resolution. Three consecutive slow windows (~0.75 s of real
+        // slowdown, not a single hitch) drop the render scale one step, down to
+        // 0.75x. Downwards only: hunting up and down mid-round would make the
+        // whole image shimmer while the player is trying to aim.
+        if (fps < 50 && curDpr > 0.75) {
+          lowFpsWindows += 1;
+          if (lowFpsWindows >= 3) {
+            lowFpsWindows = 0;
+            curDpr = Math.max(0.75, curDpr - 0.25);
+            renderer.setPixelRatio(curDpr);
+          }
+        } else {
+          lowFpsWindows = 0;
+        }
       }
 
       // --- Spawn pop animation (scale 0→1 ease-out cubic, 70ms) ---
@@ -1349,6 +1384,9 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
       hitSound();
       // Hit: green vignette reward flash — trigger directly via vigRef bypass
       if (vigRef.current) {
+        // Keep the cache in step with the bypass so the loop's next write isn't
+        // mistaken for a repeat.
+        vigLastRef.current = { o: 0.28, c: '0,229,192' };
         vigRef.current.style.opacity = 0.28;
         vigRef.current.style.boxShadow = 'inset 0 0 120px 40px rgba(0,229,192,0.28)';
       }
@@ -1488,8 +1526,13 @@ export default function AimTrainer({ onExit, lang, setLang, isMobile, name, setN
 
     // Bloom: write directly to a ref — Crosshair reads it on each render cycle
     engine.current.onBloom    = (px) => { bloomRef.current = px; };
-    // Vignette: write directly to DOM style, zero React state
+    // Vignette: write directly to DOM style, zero React state — and only when
+    // the values actually changed.
     engine.current.onVig      = (opacity, color) => {
+      const last = vigLastRef.current;
+      if (last.o === opacity && last.c === color) return;
+      last.o = opacity;
+      last.c = color;
       if (vigRef.current) {
         vigRef.current.style.opacity = opacity;
         vigRef.current.style.boxShadow =
