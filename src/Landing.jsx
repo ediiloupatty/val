@@ -412,17 +412,39 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
 
   // A hidden tab keeps decoding video frames in several browsers — pure battery
   // and CPU burn behind a background tab. Pause while away, resume on return.
+  // On the way out the element is torn down properly: dropping a <video> from
+  // the tree does not by itself stop it, it holds its decoded frames and can
+  // keep downloading until the browser collects it. Clearing the source and
+  // calling load() releases the decoder, frees the media buffer and cancels any
+  // bytes still in flight, so nothing follows the player into the arena.
   useEffect(() => {
     if (!videoUrl) return;
+    const el = videoElRef.current;
+    if (!el) return;
     const onVisibility = () => {
-      const el = videoElRef.current;
-      if (!el) return;
       if (document.hidden) el.pause();
       else el.play().catch(() => {});
     };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    };
   }, [videoUrl]);
+
+  // Called the moment the player leaves for the trainer or the hub. The unmount
+  // cleanup above would do this anyway, but only after React has committed the
+  // new screen — releasing here means the video is already gone while the arena
+  // is still loading its own assets, rather than competing with them.
+  const releaseVideo = () => {
+    const el = videoElRef.current;
+    if (!el) return;
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
+  };
 
   const formatRp = (n) => `Rp${Number(n || 0).toLocaleString('id-ID')}`;
 
@@ -559,7 +581,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
       <nav className="absolute left-6 md:left-12 top-1/2 z-10 flex w-60 -translate-y-1/2 flex-col gap-1.5 md:w-64">
         {/* PLAY — highlighted card with accent border/glow. */}
         <button
-          onClick={isMobile ? () => setShowMobileModal(true) : onPlay}
+          onClick={isMobile ? () => setShowMobileModal(true) : () => { releaseVideo(); onPlay(); }}
           onPointerEnter={warmTrainerAssets}
           onFocus={warmTrainerAssets}
           onTouchStart={warmTrainerAssets}
@@ -571,7 +593,7 @@ export default function Landing({ onPlay, onShop, lang, setLang, isMobile, name,
           </span>
         </button>
 
-        {onShop && <MenuItem icon={<StoreIcon />} label={t.shop || 'Cek Toko'} onClick={onShop} />}
+        {onShop && <MenuItem icon={<StoreIcon />} label={t.shop || 'Cek Toko'} onClick={() => { releaseVideo(); onShop(); }} />}
         <MenuItem icon={<LeaderboardIcon />} label={t.leaderboard} onClick={() => setPanel('leaderboard')} />
         <MenuItem icon={<ProfileIcon />} label={t.profile} onClick={() => setPanel('profile')} />
         <MenuItem icon={<SettingsIcon />} label={t.settings} onClick={() => setPanel('settings')} />
